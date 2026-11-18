@@ -39,6 +39,7 @@ export class Sfx {
     src.start();
   }
   shot() { this.noise(0.12, 0.35, 2600); this.tone(180, 0.08, 'square', 0.1, 60); }
+  sirenBlip() { this.tone(880, 0.14, 'sine', 0.12, 660); this.tone(660, 0.18, 'sine', 0.12, 880); }
   punch() { this.noise(0.08, 0.25, 900); }
   pickup() { this.tone(660, 0.09, 'sine', 0.14); this.tone(990, 0.12, 'sine', 0.12); }
   cash() { this.tone(880, 0.08, 'sine', 0.14); this.tone(1320, 0.14, 'sine', 0.14); }

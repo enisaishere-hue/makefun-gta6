@@ -4,7 +4,7 @@
 import { MAX_WANTED, PALETTE, clamp } from './config.js';
 import { mulberry32, pick } from './rng.js';
 import { makeCar, driveCar } from './player.js';
-import { roadPointFar } from './world.js';
+import { roadPointFar, nearestRoadPoint } from './world.js';
 
 export function makeWanted() {
   return { stars: 0, heat: 0, decayTimer: 0 };
@@ -25,7 +25,31 @@ export function updateWanted(wanted, dt) {
 }
 
 export function makePolice() {
-  return { cars: [], cops: [] };
+  return { cars: [], cops: [], roadblockTimer: 0 };
+}
+
+// At 4-5 stars the law stops chasing and starts cutting the player off:
+// two cruisers park across the road ahead of the player's direction of
+// travel, on the nearest road point in front of them.
+function spawnRoadblockAhead(police, city, player, rng) {
+  const px = player.inCar ? player.inCar.x : player.x;
+  const py = player.inCar ? player.inCar.y : player.y;
+  const pvx = player.inCar ? player.inCar.vx : Math.cos(player.angle) * 120;
+  const pvy = player.inCar ? player.inCar.vy : Math.sin(player.angle) * 120;
+  const spd = Math.hypot(pvx, pvy) || 1;
+  const ahead = nearestRoadPoint(px + (pvx / spd) * 380, py + (pvy / spd) * 380);
+  // Park across the road: perpendicular to the player's travel.
+  const perp = Math.atan2(pvy, pvx) + Math.PI / 2;
+  for (const side of [-1, 1]) {
+    const car = makeCar(
+      ahead.x + Math.cos(perp) * 26 * side,
+      ahead.y + Math.sin(perp) * 26 * side,
+      perp, PALETTE.copCar, 'Interceptor', { special: 'police' });
+    car.parked = true;
+    car.roadblock = true;
+    police.cars.push(car);
+  }
+  police.roadblockTimer = 25;
 }
 
 function spawnPoliceCar(police, city, player, rng) {
@@ -52,10 +76,21 @@ export function updatePolice(police, city, player, wanted, dt, rng, events) {
     police.cars.length = 0;
     police.cops.length = 0;
   }
+  // Four stars and up: cut the player off with a roadblock ahead of them,
+  // at most one every 25 seconds, on top of the chase cars.
+  police.roadblockTimer = Math.max(0, (police.roadblockTimer || 0) - dt);
+  if (wanted.stars >= 4 && police.roadblockTimer <= 0) {
+    spawnRoadblockAhead(police, city, player, rng);
+    events.push({ type: 'roadblock' });
+  }
   // Drop units that fell far behind once the heat is low.
   police.cars = police.cars.filter((c) => !c.dead && Math.hypot(c.x - player.x, c.y - player.y) < 1400);
   police.cops = police.cops.filter((c) => Math.hypot(c.x - player.x, c.y - player.y) < 1200);
 
+  // The player's velocity, for the intercept: a car reports it directly,
+  // on foot the player is slow enough that the lead is negligible.
+  const pvx = player.inCar ? player.inCar.vx : 0;
+  const pvy = player.inCar ? player.inCar.vy : 0;
   for (const car of police.cars) {
     const dx = player.x - car.x, dy = player.y - car.y;
     const dist = Math.hypot(dx, dy) || 1;
@@ -63,7 +98,19 @@ export function updatePolice(police, city, player, wanted, dt, rng, events) {
       // A roadblock car sits still and blocks the road; it never chases.
       continue;
     }
-    const target = Math.atan2(dy, dx);
+    // The law gets faster as the stars climb: 1-2 stars drive stock, 3
+    // stars a touch quicker, 4-5 stars run tuned interceptors.
+    car.tune = wanted.stars >= 4
+      ? { accel: 1.15, top: 1.12, steer: 1.1 }
+      : wanted.stars >= 3
+        ? { accel: 1.06, top: 1.05, steer: 1.05 }
+        : { accel: 1, top: 1, steer: 1 };
+    // Predictive pursuit: aim at where the player will be, not where they
+    // are — the lead grows with distance, so a cruiser cuts the corner
+    // instead of trailing the bumper forever.
+    const lead = Math.min(0.9, 0.25 + dist / 1400);
+    const ix = player.x + pvx * lead, iy = player.y + pvy * lead;
+    const target = Math.atan2(iy - car.y, ix - car.x);
     let da = target - car.angle;
     while (da > Math.PI) da -= Math.PI * 2;
     while (da < -Math.PI) da += Math.PI * 2;

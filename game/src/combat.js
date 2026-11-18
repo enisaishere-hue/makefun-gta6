@@ -8,9 +8,16 @@ export function makeCombat() {
     particles: [],
     floaters: [],
     pickups: [],
+    skids: [], // tyre marks: {x1, y1, x2, y2, life} — laid by hard driving
     shake: 0,
     pickupTimer: 0,
   };
+}
+
+// A short dark tyre mark between two points, fading over a few seconds.
+export function addSkid(combat, x1, y1, x2, y2) {
+  if (combat.skids.length > 240) combat.skids.shift();
+  combat.skids.push({ x1, y1, x2, y2, life: 6 });
 }
 
 export function fireBullet(combat, x, y, angle, fromPlayer) {
@@ -72,6 +79,8 @@ export function updateCombat(combat, city, dt, player) {
   for (const f of combat.floaters) { f.y -= 42 * dt; f.life -= dt; }
   combat.floaters = combat.floaters.filter((f) => f.life > 0);
   combat.shake = Math.max(0, combat.shake - dt * 26);
+  for (const s of combat.skids) s.life -= dt;
+  combat.skids = combat.skids.filter((s) => s.life > 0);
 
   // Pickups bob, get collected, and slowly respawn.
   combat.pickupTimer -= dt;

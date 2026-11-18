@@ -89,6 +89,18 @@ export function applyShot(S, name) {
     S.missions.target = { x: 700, y: 1360, label: 'Garage' };
     S.sfx.setSiren(true);
   }
+  if (name === 'bike') {
+    // The Falcon at dusk: the new bike, the Street King gates on the road,
+    // one star of heat behind it. The bike starts just south of gate 1 and
+    // rides north through it on the autopilot's route.
+    S.clockMin = 18 * 60 + 45;
+    const bike = makeCar(1280, 1650, -Math.PI / 2, '#e74c3c', 'Falcon', { kind: 'bike' });
+    S.allCars.push(bike);
+    p.inCar = bike; p.x = bike.x; p.y = bike.y;
+    S.autopilot = { route: [{ x: 1280, y: 1520 }, { x: 1280, y: 1120 }, { x: 1280, y: 720 }, { x: 1760, y: 720 }, { x: 1760, y: 1120 }], wp: 0 };
+    S.wanted.heat = 1.4; S.wanted.stars = 1; S.wanted.decayTimer = 99;
+    startMission(S.missions, 8);
+  }
 }
 
 // Drive the player's car along the route, slowing for bends first.

@@ -37,6 +37,22 @@ export const CAR = {
   radius: 15,
 };
 
+// The Falcon bike: a new ride for v3 — quicker off the line and faster on
+// top than any car, sharper steering, but it slides more, holds less health,
+// and its rider is exposed (no bodywork to hide behind).
+export const BIKE = {
+  accel: 560,
+  reverseAccel: 200,
+  maxSpeed: 600,
+  maxReverse: 120,
+  steerRate: 3.4,
+  grip: 2.2,
+  drag: 0.45,
+  offroadDrag: 1.4,
+  maxHealth: 60,
+  radius: 11,
+};
+
 export const PALETTE = {
   grass: '#2e6b34',
   grassDark: '#27592d',
@@ -55,7 +71,11 @@ export const PALETTE = {
   copCar: '#e8e8e8',
 };
 
-export const MISSION_PAY = [300, 450, 700, 1200, 1500, 1200, 6650];
+// Ten jobs pay the $12,000 down: the seven v2 runs, then three new ones —
+// a cache run, an informant escort, and a street race — before the final
+// armored score. The total still clears the debt exactly.
+export const MISSION_TOTAL = 10;
+export const MISSION_PAY = [300, 450, 600, 700, 900, 1000, 1200, 1500, 1650, 3700];
 export const MISSION_NAMES = [
   'First Delivery',
   'Borrowed Wheels',
@@ -63,6 +83,9 @@ export const MISSION_NAMES = [
   'Harbor Kings',
   "Kings' Payback",
   'Night Shift',
+  'Cache Run',
+  'The Informant',
+  'Street King',
   'The Last Score',
 ];
 

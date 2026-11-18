@@ -100,6 +100,7 @@ export function drawWorld(ctx, city, cam, time) {
 export function drawCar(ctx, car, cam, time) {
   const x = car.x - cam.x, y = car.y - cam.y;
   if (x < -60 || y < -60 || x > 1340 || y > 780) return;
+  if (car.kind === 'bike') return drawBike(ctx, car, x, y, time);
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(car.angle);
@@ -160,6 +161,125 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// The Falcon bike: a slim two-wheeler with a rider leaning into the turn —
+// visibly narrower than any car, so it reads as a bike at a glance.
+function drawBike(ctx, car, x, y, time) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(car.angle);
+  ctx.fillStyle = '#00000044';
+  ctx.beginPath(); ctx.ellipse(0, 4, 18, 5, 0, 0, Math.PI * 2); ctx.fill();
+  // Wheels: two dark rings fore and aft.
+  ctx.fillStyle = '#14181d';
+  ctx.beginPath(); ctx.arc(16, 0, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-16, 0, 7, 0, Math.PI * 2); ctx.fill();
+  // Frame and tank in the bike's colour.
+  ctx.strokeStyle = car.color; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(-16, 0); ctx.lineTo(16, 0); ctx.stroke();
+  ctx.fillStyle = car.color;
+  roundRect(ctx, -2, -5, 12, 10, 4); ctx.fill();
+  // Rider: jacket torso and helmet.
+  ctx.fillStyle = PALETTE.playerJacket;
+  ctx.beginPath(); ctx.arc(-4, 0, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(-8, 0, 4, 0, Math.PI * 2); ctx.fill();
+  // Headlight.
+  ctx.fillStyle = '#ffe9a8';
+  ctx.fillRect(20, -2, 3, 4);
+  ctx.restore();
+  if (car.smoke > 0 && Math.random() < car.smoke * 0.5) {
+    ctx.fillStyle = '#88888888';
+    ctx.beginPath();
+    ctx.arc(x + (Math.random() * 16 - 8), y + (Math.random() * 16 - 8), 5 + Math.random() * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (car.dead) {
+    ctx.fillStyle = '#00000088';
+    ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff6b35';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('WRECK', x - 20, y - 26);
+  }
+}
+
+// Tyre marks, laid by hard driving: dark, fading, drawn on the road under
+// the cars.
+export function drawSkids(ctx, skids, cam) {
+  ctx.save();
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  for (const s of skids) {
+    ctx.globalAlpha = Math.min(0.5, s.life / 6 * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(s.x1 - cam.x, s.y1 - cam.y);
+    ctx.lineTo(s.x2 - cam.x, s.y2 - cam.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Mission extras the target marker alone cannot show: the Cache Run's
+// stashes (gold crates) and the Street King gates (checkered rings).
+export function drawMissionExtras(ctx, S, cam, time) {
+  const m = S.missions;
+  if (m.index === 6) {
+    for (const pkg of m.packages) {
+      if (pkg.taken) continue;
+      const x = pkg.x - cam.x, y = pkg.y - cam.y + Math.sin(time * 3 + pkg.x) * 3;
+      if (x < -24 || y < -24 || x > 1304 || y > 744) continue;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = '#ffd76a';
+      ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#b8860b';
+      ctx.fillRect(-9, -9, 18, 18);
+      ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 2;
+      ctx.strokeRect(-9, -9, 18, 18);
+      ctx.restore();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('$', x, y + 4);
+      ctx.textAlign = 'left';
+    }
+  }
+  if (m.index === 8) {
+    for (let i = 0; i < m.gates.length; i++) {
+      const g = m.gates[i];
+      const x = g.x - cam.x, y = g.y - cam.y;
+      if (x < -50 || y < -50 || x > 1330 || y > 770) continue;
+      const live = i === m.gateIndex;
+      const pulse = live ? 1 + Math.sin(time * 6) * 0.12 : 1;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.strokeStyle = live ? '#ffd76a' : '#5a7a5a';
+      ctx.lineWidth = live ? 6 : 3;
+      ctx.beginPath(); ctx.arc(0, 0, 34 * pulse, 0, Math.PI * 2); ctx.stroke();
+      // Checkered ring: alternating dark and light ticks.
+      for (let t = 0; t < 12; t++) {
+        if (t % 2) continue;
+        const a = (t / 12) * Math.PI * 2;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * 34 * pulse, Math.sin(a) * 34 * pulse);
+        ctx.lineTo(Math.cos(a) * 40 * pulse, Math.sin(a) * 40 * pulse);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.fillStyle = live ? '#ffd76a' : '#9fb4c8';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(i + 1), x, y + 6);
+      ctx.textAlign = 'left';
+    }
+  }
 }
 
 export function drawPlayer(ctx, p, cam, time) {
@@ -294,13 +414,14 @@ export function drawHUD(ctx, S) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 12px system-ui, sans-serif';
   ctx.fillText('HP ' + Math.ceil(Math.max(0, p.health)), 505, 26);
-  // Ammo / speed.
+  // Ammo / speed — the vehicle shows its own model name (a Falcon bike
+  // reads BIKE, a Comet S reads COMET S), so the player always knows the ride.
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 16px system-ui, sans-serif';
   if (p.inCar) {
     const sp = Math.round(Math.hypot(p.inCar.vx, p.inCar.vy) * 0.22);
     ctx.fillText(sp + ' MPH', 690, 31);
-    ctx.fillText('CAR ' + Math.ceil(p.inCar.health) + '%', 780, 31);
+    ctx.fillText(p.inCar.model.toUpperCase() + ' ' + Math.ceil(p.inCar.health) + '%', 780, 31);
   } else {
     ctx.fillText('AMMO ' + p.ammo + ' / ' + p.reserve, 690, 31);
   }
@@ -318,7 +439,7 @@ export function drawHUD(ctx, S) {
     ctx.fillRect(16, 56, 700, 30);
     ctx.fillStyle = '#ffd76a';
     ctx.font = 'bold 15px system-ui, sans-serif';
-    let line = 'JOB ' + (S.missions.index + 1) + '/7 — ' + MISSION_NAMES[Math.min(6, S.missions.index)] + ': ' + S.missions.text;
+    let line = 'JOB ' + (S.missions.index + 1) + '/10 — ' + MISSION_NAMES[Math.min(9, S.missions.index)] + ': ' + S.missions.text;
     if (S.missions.timer > 0) line += '  [' + Math.ceil(S.missions.timer) + 's]';
     ctx.fillText(line.slice(0, 110), 24, 76);
   }
@@ -396,14 +517,14 @@ export function drawTitle(ctx, S) {
   ctx.fillStyle = '#fff';
   ctx.font = '22px system-ui, sans-serif';
   ctx.fillText('Jax Marlowe owes the Harbor Kings $12,000.', 640, 300);
-  ctx.fillText('Fixer Delia Voss has seven jobs that pay it down.', 640, 332);
+  ctx.fillText('Fixer Delia Voss has ten jobs that pay it down.', 640, 332);
   ctx.fillText('Steal cars. Outrun the law. Survive the night.', 640, 364);
   ctx.fillStyle = '#2ecc71';
   ctx.font = '17px system-ui, sans-serif';
-  ctx.fillText('Gunfights with the Kings · live synth music · day & night · 8 hidden caches', 640, 412);
+  ctx.fillText('Gunfights with the Kings · Falcon bikes · police roadblocks · live synth music · day & night · 8 hidden caches', 640, 412);
   ctx.fillStyle = '#ffd76a';
   ctx.font = 'bold 24px system-ui, sans-serif';
-  ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/7 jobs done' : 'Press ENTER to start', 640, 478);
+  ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/10 jobs done' : 'Press ENTER to start', 640, 478);
   ctx.fillStyle = '#9fb4c8';
   ctx.font = '16px system-ui, sans-serif';
   ctx.fillText('WASD move & drive · Mouse aim · Click shoot · F punch · E enter car · P pause · M mute', 640, 526);
@@ -425,8 +546,8 @@ export function drawWasted(ctx, fine) {
 
 export function drawStoryDone(ctx, S) {
   screenPanel(ctx, 'STORY COMPLETE', [
-    'All seven jobs done. The Harbor Kings are paid, and Jax walks free.',
-    'Cash earned: $' + S.earned.toLocaleString('en-US') + ' · Jobs: 7/7 · Debt: $0',
+    'All ten jobs done. The Harbor Kings are paid, and Jax walks free.',
+    'Cash earned: $' + S.earned.toLocaleString('en-US') + ' · Jobs: 10/10 · Debt: $0',
     'Free roam continues — press ENTER to keep playing Port Meridian',
   ], '#2ecc71');
 }

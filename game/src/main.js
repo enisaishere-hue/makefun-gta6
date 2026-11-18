@@ -1,6 +1,6 @@
 // Neon Harbor — the game loop: state, screens, shooting, stealing cars,
 // busted/wasted, saving, and the camera. One clear job: run the game.
-import { WORLD_W, WORLD_H, PLAYER, CAR, START_CASH, BUSTED_FINE, WASTED_FINE, clamp } from './config.js';
+import { WORLD_W, WORLD_H, PLAYER, CAR, START_CASH, BUSTED_FINE, WASTED_FINE, MISSION_TOTAL, clamp } from './config.js';
 import { mulberry32 } from './rng.js';
 import { buildCity } from './world.js';
 import { Sfx } from './audio.js';
@@ -9,7 +9,7 @@ import { makePlayer, makeCar, driveCar, updatePlayerOnFoot, exitCar } from './pl
 import { makeTraffic, updateTraffic } from './traffic.js';
 import { makePedestrians, updatePedestrians, scarePeds } from './pedestrians.js';
 import { makeWanted, makePolice, updatePolice, updateWanted, addHeat } from './police.js';
-import { makeCombat, fireBullet, spawnParticles, addFloater, addShake, updateCombat, seedPickups } from './combat.js';
+import { makeCombat, fireBullet, spawnParticles, addFloater, addShake, addSkid, updateCombat, seedPickups } from './combat.js';
 import { makeEnemies, spawnSquad, dropEnforcerLoot, updateEnemies, drawEnemies } from './enemies.js';
 import { Music } from './music.js';
 import { makeCollectibles, updateCollectibles, drawCollectibles } from './collectibles.js';
@@ -33,7 +33,7 @@ function writeSave(S) {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       cash: S.player.cash,
-      jobsDone: Math.min(7, S.missions.index),
+      jobsDone: Math.min(MISSION_TOTAL, S.missions.index),
       bestEarned: Math.max(S.save.bestEarned, S.earned),
     }));
   } catch { /* storage unavailable: the game still plays */ }
@@ -74,6 +74,7 @@ export function createGame(canvas) {
   S.player.cash = save.cash;
 
   // Parked cars: the mission van, the red Comet S, and a few street cars.
+  // Plus two Falcon bikes (v3): one by the Downtown plaza, one at the harbor.
   S.parkedCars = [
     makeCar(spots.VAN_SPOT.x, spots.VAN_SPOT.y, 0, '#ecf0f1', 'Van', { parked: true, special: 'van' }),
     makeCar(spots.COMET_SPOT.x, spots.COMET_SPOT.y, Math.PI / 2, '#c0392b', 'Comet S', { parked: true, special: 'comet' }),
@@ -84,6 +85,8 @@ export function createGame(canvas) {
     makeCar(2290, 770, 0, '#8e44ad', 'Sedan', { parked: true }),
     makeCar(560, 330, Math.PI, '#ff6b9d', 'Coupe', { parked: true }),
     makeCar(2080, 330, 0, '#2ecc71', 'Truck', { parked: true }),
+    makeCar(1150, 620, Math.PI / 2, '#e74c3c', 'Falcon', { parked: true, kind: 'bike' }),
+    makeCar(980, 1700, 0, '#1abc9c', 'Falcon', { parked: true, kind: 'bike' }),
   ];
   S.collectibles = makeCollectibles(seed);
   S.music = new Music(S.sfx);
@@ -103,7 +106,7 @@ export function createGame(canvas) {
   const jump = params.get('mission');
   if (jump !== null && !shot) {
     const n = Number(jump);
-    if (Number.isInteger(n) && n >= 0 && n <= 6) {
+    if (Number.isInteger(n) && n >= 0 && n <= MISSION_TOTAL - 1) {
       S.screen = 'playing';
       startMission(S.missions, n);
     }
@@ -134,6 +137,10 @@ function handlePoliceEvents(S, events) {
     if (ev.type === 'copBang') { S.sfx.punch(); }
     if (ev.type === 'copPunch') { S.sfx.punch(); addShake(S.combat, 3); }
     if (ev.type === 'busted') busted(S);
+    if (ev.type === 'roadblock') {
+      addFloater(S.combat, S.player.x, S.player.y - 40, 'ROADBLOCK AHEAD', '#2d7dff');
+      S.sfx.sirenBlip();
+    }
   }
 }
 
@@ -189,6 +196,14 @@ function handleMissionEvents(S, events) {
       S.screen = 'story';
       writeSave(S);
     }
+    if (ev.type === 'cacheGrab') {
+      S.sfx.cash();
+      addFloater(S.combat, S.player.x, S.player.y - 30, 'STASH GRABBED — ' + ev.left + ' left', '#ffd76a');
+    }
+    if (ev.type === 'gatePass') {
+      S.sfx.cash();
+      addFloater(S.combat, S.player.x, S.player.y - 30, 'GATE ' + ev.gate + '/' + ev.total, '#ffd76a');
+    }
   }
 }
 
@@ -209,6 +224,10 @@ function shootAt(S, tx, ty) {
   p.ammo -= 1;
   p.fireCooldown = PLAYER.fireCooldown;
   fireBullet(S.combat, p.x, p.y, Math.atan2(ty - p.y, tx - p.x), true);
+  // Muzzle flash: a hot burst at the barrel, gone in a blink.
+  const ma = Math.atan2(ty - p.y, tx - p.x);
+  spawnParticles(S.combat, p.x + Math.cos(ma) * 22, p.y + Math.sin(ma) * 22, '#ffe9a8', 5, 170);
+  spawnParticles(S.combat, p.x + Math.cos(ma) * 22, p.y + Math.sin(ma) * 22, '#ff9a3c', 3, 110);
   S.sfx.shot();
   addShake(S.combat, 2);
   scarePeds(S.peds, p.x, p.y, 320);
@@ -336,6 +355,16 @@ function updatePlaying(S, dt) {
     }
     const speed = driveCar(car, drive.throttle, drive.steer, drive.handbrake, dt, S.city);
     p.x = car.x; p.y = car.y; p.angle = car.angle;
+    // Hard driving leaves tyre marks: handbrake, or a sharp steer at speed.
+    // A mark runs from each rear wheel's last spot to its new one.
+    if ((drive.handbrake || Math.abs(drive.steer) > 0.75) && speed > 200) {
+      const bx = Math.cos(car.angle), by = Math.sin(car.angle);
+      const lx = -by, ly = bx;
+      const rx = car.x - bx * 18, ry = car.y - by * 18;
+      const step = speed * dt;
+      addSkid(S.combat, rx + lx * 10 - bx * step, ry + ly * 10 - by * step, rx + lx * 10, ry + ly * 10);
+      addSkid(S.combat, rx - lx * 10 - bx * step, ry - ly * 10 - by * step, rx - lx * 10, ry - ly * 10);
+    }
     S.engineTick -= dt;
     if (speed > 120 && S.engineTick <= 0) { S.engineTick = 0.12; S.sfx.engineTick(); }
     // Car-vs-car bumps.
@@ -413,11 +442,14 @@ function draw(S) {
   if (sh > 0) ctx.translate((Math.random() - 0.5) * sh, (Math.random() - 0.5) * sh);
   const cam = { x: S.cam.x, y: S.cam.y };
   render.drawWorld(ctx, S.city, cam, S.time);
+  render.drawSkids(ctx, S.combat.skids, cam);
   if (S.missions.target) render.drawTarget(ctx, S.missions.target, cam, S.time);
+  render.drawMissionExtras(ctx, S, cam, S.time);
   for (const car of S.allCars) render.drawCar(ctx, car, cam, S.time);
   for (const car of S.police.cars) render.drawCar(ctx, car, cam, S.time);
   for (const ped of S.peds) if (!ped.dead) render.drawPed(ctx, ped, cam);
   if (S.mossPed && !S.missions.mossWithYou && S.missions.index === 3) render.drawPed(ctx, S.mossPed, cam);
+  if (S.missions.index === 7 && S.missions.informant && !S.missions.informantWithYou) render.drawPed(ctx, S.missions.informant, cam);
   for (const cop of S.police.cops) render.drawCop(ctx, cop, cam);
   if (S.missions.index === 5 && S.missions.stage === 0 && S.missions.farePed) render.drawPed(ctx, S.missions.farePed, cam);
   if (!S.player.inCar) render.drawPlayer(ctx, S.player, cam, S.time);
@@ -445,7 +477,7 @@ export function startGame(S) {
     }
     if (S.screen === 'title' && (input.consumeKey('Enter') || input.consumeClick())) {
       S.screen = 'playing';
-      if (S.save.jobsDone > 0 && S.save.jobsDone < 7) startMission(S.missions, S.save.jobsDone);
+      if (S.save.jobsDone > 0 && S.save.jobsDone < MISSION_TOTAL) startMission(S.missions, S.save.jobsDone);
       else startMission(S.missions, 0);
       S.sfx.ensure();
       S.music.start();

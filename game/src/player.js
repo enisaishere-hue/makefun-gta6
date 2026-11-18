@@ -1,13 +1,15 @@
 // Neon Harbor — the player on foot and behind the wheel, plus car physics.
 // One clear job: move the hero and any car they drive, with arcade handling.
-import { WORLD_W, WORLD_H, PLAYER, CAR, clamp, angleLerp } from './config.js';
+import { WORLD_W, WORLD_H, PLAYER, CAR, BIKE, clamp, angleLerp } from './config.js';
 import { collideCircle, onRoad } from './world.js';
 
 export function makeCar(x, y, angle, color, model, opts = {}) {
+  const kind = opts.kind || 'car';
   return {
     x, y, angle, vx: 0, vy: 0,
     color, model: model || 'Sedan',
-    health: CAR.maxHealth,
+    kind, // 'car' or 'bike' — a bike rides the BIKE tuning below
+    health: kind === 'bike' ? BIKE.maxHealth : CAR.maxHealth,
     parked: !!opts.parked,
     special: opts.special || null, // 'comet' | 'van' | 'police' | null
     smoke: 0, dead: false,
@@ -27,24 +29,30 @@ export function makePlayer(x, y) {
 }
 
 // Arcade car physics: accelerate along the nose, steer with speed, kill sideways slide.
+// A bike rides the BIKE tuning (quicker, faster, looser); a police cruiser
+// carries a `tune` multiplier the heat sets, so the law gets faster as the
+// stars climb. `tune` is {accel, top, steer} multipliers, defaulting to 1.
 export function driveCar(car, throttle, steer, handbrake, dt, city) {
+  const base = car.kind === 'bike' ? BIKE : CAR;
+  const tune = car.tune || { accel: 1, top: 1, steer: 1 };
+  const accel = base.accel * tune.accel;
+  const maxF = base.maxSpeed * tune.top, maxR = base.maxReverse;
   const fx = Math.cos(car.angle), fy = Math.sin(car.angle);
   let speed = car.vx * fx + car.vy * fy;
   const rx = -fy, ry = fx;
   let lateral = car.vx * rx + car.vy * ry;
 
-  if (throttle > 0) speed += CAR.accel * throttle * dt;
+  if (throttle > 0) speed += accel * throttle * dt;
   else if (throttle < 0) {
-    if (speed > 5) speed -= CAR.accel * 0.9 * dt; // brake while rolling forward
-    else speed -= CAR.reverseAccel * dt;           // then reverse
+    if (speed > 5) speed -= accel * 0.9 * dt; // brake while rolling forward
+    else speed -= base.reverseAccel * dt;           // then reverse
   }
 
-  const maxF = CAR.maxSpeed, maxR = CAR.maxReverse;
   speed = clamp(speed, -maxR, maxF);
-  const steerAmount = steer * CAR.steerRate * clamp(Math.abs(speed) / 140, 0, 1) * (speed >= 0 ? 1 : -1);
+  const steerAmount = steer * base.steerRate * tune.steer * clamp(Math.abs(speed) / 140, 0, 1) * (speed >= 0 ? 1 : -1);
   car.angle += steerAmount * dt * (handbrake ? 1.5 : 1);
-  lateral *= Math.exp(-CAR.grip * dt * (handbrake ? 0.35 : 1));
-  const drag = onRoad(car.x, car.y) ? CAR.drag : CAR.offroadDrag;
+  lateral *= Math.exp(-base.grip * dt * (handbrake ? 0.35 : 1));
+  const drag = onRoad(car.x, car.y) ? base.drag : base.offroadDrag;
   speed *= Math.exp(-drag * dt * (handbrake ? 2.2 : 1));
 
   const nfx = Math.cos(car.angle), nfy = Math.sin(car.angle);
@@ -52,7 +60,7 @@ export function driveCar(car, throttle, steer, handbrake, dt, city) {
   car.vx = nfx * speed + nrx * lateral;
   car.vy = nfy * speed + nry * lateral;
   const nx = car.x + car.vx * dt, ny = car.y + car.vy * dt;
-  const fixed = collideCircle(city, nx, ny, CAR.radius);
+  const fixed = collideCircle(city, nx, ny, base.radius);
   if (Math.abs(fixed.x - nx) > 0.5 || Math.abs(fixed.y - ny) > 0.5) {
     // Hit a wall: scrape off speed; damage at most once per half second,
     // so grinding along a wall cannot delete a car in a single slide.
