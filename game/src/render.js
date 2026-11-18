@@ -129,6 +129,13 @@ export function drawCar(ctx, car, cam, time) {
     ctx.font = 'bold 9px system-ui, sans-serif';
     ctx.fillText('COMET S', -18, 4);
   }
+  if (car.special === 'armored') {
+    ctx.fillStyle = '#d4af37';
+    ctx.fillRect(-24, -4, 48, 8);
+    ctx.fillStyle = '#1c2733';
+    ctx.font = 'bold 8px system-ui, sans-serif';
+    ctx.fillText('ARMORED', -20, 3);
+  }
   ctx.restore();
   if (car.smoke > 0 && Math.random() < car.smoke * 0.5) {
     ctx.fillStyle = '#88888888';
@@ -301,20 +308,24 @@ export function drawHUD(ctx, S) {
   ctx.font = '14px system-ui, sans-serif';
   ctx.fillText(districtAt(S.city, p.inCar ? p.inCar.x : p.x, p.inCar ? p.inCar.y : p.y), 900, 30);
   ctx.fillText(S.timeStr, 1080, 30);
+  // Caches found.
+  ctx.fillStyle = '#2ecc71';
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillText('CACHES ' + S.collectibles.found + '/' + S.collectibles.total, 1150, 30);
   // Mission line.
   if (S.missions.text) {
     ctx.fillStyle = '#00000099';
     ctx.fillRect(16, 56, 700, 30);
     ctx.fillStyle = '#ffd76a';
     ctx.font = 'bold 15px system-ui, sans-serif';
-    let line = 'JOB ' + (S.missions.index + 1) + '/4 — ' + MISSION_NAMES[Math.min(3, S.missions.index)] + ': ' + S.missions.text;
+    let line = 'JOB ' + (S.missions.index + 1) + '/7 — ' + MISSION_NAMES[Math.min(6, S.missions.index)] + ': ' + S.missions.text;
     if (S.missions.timer > 0) line += '  [' + Math.ceil(S.missions.timer) + 's]';
     ctx.fillText(line.slice(0, 110), 24, 76);
   }
   // Controls hint.
   ctx.fillStyle = '#ffffffaa';
   ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText('WASD move/drive · Mouse aim · Click shoot · R reload · E enter car · Shift sprint · Space handbrake · P pause · M mute', 16, 708);
+  ctx.fillText('WASD move/drive · Mouse aim · Click shoot · F punch · R reload · E enter car · Shift sprint · Space handbrake · P pause · M mute', 16, 708);
   drawMinimap(ctx, S);
 }
 
@@ -366,25 +377,37 @@ function screenPanel(ctx, title, lines, accent) {
 export function drawTitle(ctx, S) {
   // A live city backdrop behind the title: draw the world at the start spot.
   drawWorld(ctx, S.city, S.cam, S.time);
-  ctx.fillStyle = '#00000088';
+  ctx.fillStyle = '#0000008c';
   ctx.fillRect(0, 0, 1280, 720);
+  // Neon frame.
+  ctx.strokeStyle = '#ffd76a';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(28, 28, 1224, 664);
+  ctx.strokeStyle = '#ff2d78';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(36, 36, 1208, 648);
   ctx.fillStyle = '#ffd76a';
-  ctx.font = 'bold 84px system-ui, sans-serif';
+  ctx.font = 'bold 88px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('NEON HARBOR', 640, 220);
+  ctx.fillText('NEON HARBOR', 640, 190);
+  ctx.fillStyle = '#ff2d78';
+  ctx.font = 'bold 30px system-ui, sans-serif';
+  ctx.fillText('PORT MERIDIAN', 640, 232);
   ctx.fillStyle = '#fff';
-  ctx.font = '26px system-ui, sans-serif';
-  ctx.fillText('A Port Meridian story — open-world crime in the sun', 640, 268);
-  ctx.font = '19px system-ui, sans-serif';
-  ctx.fillText('Jax Marlowe owes the Harbor Kings $12,000.', 640, 330);
-  ctx.fillText('Fixer Delia Voss has four jobs that pay it down.', 640, 360);
-  ctx.fillText('Steal cars. Outrun the law. Get paid.', 640, 390);
+  ctx.font = '22px system-ui, sans-serif';
+  ctx.fillText('Jax Marlowe owes the Harbor Kings $12,000.', 640, 300);
+  ctx.fillText('Fixer Delia Voss has seven jobs that pay it down.', 640, 332);
+  ctx.fillText('Steal cars. Outrun the law. Survive the night.', 640, 364);
+  ctx.fillStyle = '#2ecc71';
+  ctx.font = '17px system-ui, sans-serif';
+  ctx.fillText('Gunfights with the Kings · live synth music · day & night · 8 hidden caches', 640, 412);
   ctx.fillStyle = '#ffd76a';
   ctx.font = 'bold 24px system-ui, sans-serif';
-  ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/4 jobs done' : 'Press ENTER to start', 640, 470);
+  ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/7 jobs done' : 'Press ENTER to start', 640, 478);
   ctx.fillStyle = '#9fb4c8';
   ctx.font = '16px system-ui, sans-serif';
-  ctx.fillText('WASD move & drive · Mouse aim · Click shoot · E enter car · P pause', 640, 520);
+  ctx.fillText('WASD move & drive · Mouse aim · Click shoot · F punch · E enter car · P pause · M mute', 640, 526);
+  ctx.fillText('Find the caches, finish the jobs, and the debt is gone.', 640, 556);
   ctx.textAlign = 'left';
 }
 
@@ -402,8 +425,8 @@ export function drawWasted(ctx, fine) {
 
 export function drawStoryDone(ctx, S) {
   screenPanel(ctx, 'STORY COMPLETE', [
-    'All four jobs done. The Harbor Kings are paid, and Jax walks free.',
-    'Cash earned: $' + S.earned.toLocaleString('en-US') + ' · Jobs: 4/4',
+    'All seven jobs done. The Harbor Kings are paid, and Jax walks free.',
+    'Cash earned: $' + S.earned.toLocaleString('en-US') + ' · Jobs: 7/7 · Debt: $0',
     'Free roam continues — press ENTER to keep playing Port Meridian',
   ], '#2ecc71');
 }

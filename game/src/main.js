@@ -10,6 +10,10 @@ import { makeTraffic, updateTraffic } from './traffic.js';
 import { makePedestrians, updatePedestrians, scarePeds } from './pedestrians.js';
 import { makeWanted, makePolice, updatePolice, updateWanted, addHeat } from './police.js';
 import { makeCombat, fireBullet, spawnParticles, addFloater, addShake, updateCombat, seedPickups } from './combat.js';
+import { makeEnemies, spawnSquad, dropEnforcerLoot, updateEnemies, drawEnemies } from './enemies.js';
+import { Music } from './music.js';
+import { makeCollectibles, updateCollectibles, drawCollectibles } from './collectibles.js';
+import { drawNight } from './night.js';
 import { makeMissions, startMission, updateMissions, missionSpots } from './missions.js';
 import { applyShot, autopilotDrive } from './shots.js';
 import * as render from './render.js';
@@ -29,7 +33,7 @@ function writeSave(S) {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       cash: S.player.cash,
-      jobsDone: Math.min(4, S.missions.index),
+      jobsDone: Math.min(7, S.missions.index),
       bestEarned: Math.max(S.save.bestEarned, S.earned),
     }));
   } catch { /* storage unavailable: the game still plays */ }
@@ -54,6 +58,9 @@ export function createGame(canvas) {
     wanted: makeWanted(),
     police: makePolice(),
     combat: makeCombat(),
+    enemies: makeEnemies(),
+    collectibles: null, // built from the seed below, after the city exists
+    music: null, // built from the sfx below, after the player exists
     missions: makeMissions(),
     time: 0, clockMin: 18 * 60, timeStr: '18:00',
     screen: 'title',
@@ -70,11 +77,16 @@ export function createGame(canvas) {
   S.parkedCars = [
     makeCar(spots.VAN_SPOT.x, spots.VAN_SPOT.y, 0, '#ecf0f1', 'Van', { parked: true, special: 'van' }),
     makeCar(spots.COMET_SPOT.x, spots.COMET_SPOT.y, Math.PI / 2, '#c0392b', 'Comet S', { parked: true, special: 'comet' }),
+    makeCar(spots.ARMORED_SPOT.x, spots.ARMORED_SPOT.y, Math.PI / 2, '#d4af37', 'Armored Van', { parked: true, special: 'armored' }),
     makeCar(850, 770, 0, '#2980b9', 'Sedan', { parked: true }),
     makeCar(1810, 1170, Math.PI, '#f1c40f', 'Taxi', { parked: true }),
     makeCar(330, 1570, Math.PI / 2, '#16a085', 'Hatch', { parked: true }),
     makeCar(2290, 770, 0, '#8e44ad', 'Sedan', { parked: true }),
+    makeCar(560, 330, Math.PI, '#ff6b9d', 'Coupe', { parked: true }),
+    makeCar(2080, 330, 0, '#2ecc71', 'Truck', { parked: true }),
   ];
+  S.collectibles = makeCollectibles(seed);
+  S.music = new Music(S.sfx);
   S.traffic = makeTraffic(city, seed, 14);
   S.peds = makePedestrians(city, seed, 26);
   S.allCars = [...S.parkedCars, ...S.traffic];
@@ -87,6 +99,15 @@ export function createGame(canvas) {
 
   const shot = params.get('shot');
   if (shot) applyShot(S, shot);
+  // ?mission=N jumps straight to that job (handy for testing and shots).
+  const jump = params.get('mission');
+  if (jump !== null && !shot) {
+    const n = Number(jump);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) {
+      S.screen = 'playing';
+      startMission(S.missions, n);
+    }
+  }
 
   // Expose the live state for the shot driver and for debugging.
   window.__NEON_HARBOR__ = S;
@@ -216,6 +237,11 @@ function punchAt(S) {
     S.police.cops = S.police.cops.filter((c) => c !== cop);
     addHeat(S.wanted, 1.5);
   }
+  for (const foe of [...S.enemies.list]) if (hit(foe, 11, PLAYER.punchDamage) && foe.health <= 0) {
+    foe.health = 0;
+    S.enemies.list = S.enemies.list.filter((e) => e !== foe);
+    dropEnforcerLoot(S, foe);
+  }
   for (const ped of S.peds) if (!ped.dead && hit(ped, 8, PLAYER.punchDamage)) {
     ped.dead = true;
     addHeat(S.wanted, 1);
@@ -241,6 +267,10 @@ function testBullets(S) {
       S.police.cops = S.police.cops.filter((c) => c !== cop);
       addHeat(S.wanted, 1.5);
       addFloater(S.combat, cop.x, cop.y - 26, 'COP DOWN', '#e74c3c');
+    });
+    for (const foe of [...S.enemies.list]) hitTarget(foe, 13, PLAYER.pistolDamage, () => {
+      S.enemies.list = S.enemies.list.filter((e) => e !== foe);
+      dropEnforcerLoot(S, foe);
     });
     for (const ped of S.peds) if (!ped.dead) hitTarget(ped, 10, PLAYER.pistolDamage, () => {
       ped.dead = true;
@@ -337,6 +367,10 @@ function updatePlaying(S, dt) {
       S.sfx.crash();
       exitCar(p, car);
     }
+    // A battered car trails dark smoke from its hood.
+    if (car.health < 45 && !car.dead && Math.random() < dt * 7) {
+      spawnParticles(S.combat, car.x + Math.cos(car.angle) * 18, car.y + Math.sin(car.angle) * 18, '#555555', 1, 40);
+    }
   } else {
     updatePlayerOnFoot(p, input, dt, S.city, S.cam);
     if (input.consumeClick()) {
@@ -353,6 +387,8 @@ function updatePlaying(S, dt) {
     addFloater(S.combat, ped.x, ped.y - 16, 'RAN OVER +1★', '#e74c3c');
     S.sfx.crash();
   }
+  updateEnemies(S.enemies, S, dt);
+  updateCollectibles(S.collectibles, S, dt);
   updateWanted(S.wanted, dt);
   const pEvents = [];
   updatePolice(S.police, S.city, p, S.wanted, dt, S.rng, pEvents);
@@ -383,8 +419,12 @@ function draw(S) {
   for (const ped of S.peds) if (!ped.dead) render.drawPed(ctx, ped, cam);
   if (S.mossPed && !S.missions.mossWithYou && S.missions.index === 3) render.drawPed(ctx, S.mossPed, cam);
   for (const cop of S.police.cops) render.drawCop(ctx, cop, cam);
+  if (S.missions.index === 5 && S.missions.stage === 0 && S.missions.farePed) render.drawPed(ctx, S.missions.farePed, cam);
   if (!S.player.inCar) render.drawPlayer(ctx, S.player, cam, S.time);
+  drawCollectibles(ctx, S.collectibles, cam, S.time);
+  drawEnemies(ctx, S.enemies, cam);
   render.drawCombat(ctx, S.combat, cam);
+  drawNight(ctx, S);
   ctx.restore();
   if (S.screen === 'playing') render.drawHUD(ctx, S);
   else if (S.screen === 'title') render.drawTitle(ctx, S);
@@ -405,9 +445,10 @@ export function startGame(S) {
     }
     if (S.screen === 'title' && (input.consumeKey('Enter') || input.consumeClick())) {
       S.screen = 'playing';
-      if (S.save.jobsDone > 0 && S.save.jobsDone < 4) startMission(S.missions, S.save.jobsDone);
+      if (S.save.jobsDone > 0 && S.save.jobsDone < 7) startMission(S.missions, S.save.jobsDone);
       else startMission(S.missions, 0);
       S.sfx.ensure();
+      S.music.start();
     } else if ((S.screen === 'busted' || S.screen === 'wasted') && input.consumeKey('Enter')) {
       S.screen = 'playing';
     } else if (S.screen === 'story' && input.consumeKey('Enter')) {

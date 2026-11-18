@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/gta6-01/enisaishere-hue/makefun-gta6/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/enisaishere-hue/makefun-gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-Neon Harbor — a top-down open-world crime game set in the fictional coastal city of Port Meridian. Jax Marlowe owes the Harbor Kings $12,000, and fixer Delia Voss hands out four story jobs to pay it down: a timed van delivery, stealing the red Comet S sports car, a pickup run at 3 wanted stars, and a roadblock run with Moss to the harbor. Explore the city on foot and by car, steal vehicles, outrun police cars and foot cops through a 0–5 star wanted system, fight with pistol and fists, grab cash, ammo and health pickups, and watch the story end in free roam. Plain JavaScript canvas, static files, no network requests, procedural WebAudio sound.
+Neon Harbor — a top-down open-world crime game set in the fictional coastal city of Port Meridian. Jax Marlowe owes the Harbor Kings $12,000, and fixer Delia Voss hands out seven story jobs to pay it down: a timed van delivery, stealing the red Comet S sports car, a pickup run at 3 wanted stars, a roadblock run with Moss to the harbor, a shootout with the Kings' armed enforcers at the east warehouse, a night of taxi fares, and a final armored-van score at 4 stars that clears the debt. Explore the city on foot and by car, steal vehicles, outrun police cars and foot cops through a 0–5 star wanted system, fight gunmen who shoot back with pistol and fists, grab cash, ammo and health pickups, hunt 8 hidden smuggler's caches, and watch the city fall dark as the day/night cycle turns the neon on. A procedural WebAudio soundtrack — bass groove, kick, hats and lead — plays under the engine, gunshots and sirens. Plain JavaScript canvas, static files, no network requests.
 
 ## Run it
 
@@ -12,7 +12,7 @@ Neon Harbor — a top-down open-world crime game set in the fictional coastal ci
 node serve.ts
 ```
 
-Then open http://localhost:8080 in a desktop browser. WASD moves and drives, mouse aims, click shoots, E enters a car, R reloads, P pauses.
+Then open http://localhost:8080 in a desktop browser. WASD moves and drives, mouse aims, click shoots, F punches, E enters a car, R reloads, M mutes, P pauses. Find all 8 caches for a $500 bonus.
 
 ---
 

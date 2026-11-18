@@ -5,7 +5,7 @@ import { mulberry32, pick, range, chance } from './rng.js';
 import { collideCircle, onRoad } from './world.js';
 
 const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
-const SHIRTS = ['#3498db', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#ecf0f1', '#e74c3c'];
+const SHIRTS = ['#3498db', '#e67e22', '#9b59b6', '#1abc9c', '#f39c12', '#ecf0f1', '#e74c3c', '#ff6b9d', '#2ecc71', '#f5d76e'];
 
 export function makePedestrians(city, seed, count) {
   const rng = mulberry32(seed ^ 0xbeef);

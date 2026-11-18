@@ -12,7 +12,7 @@ export function makeTraffic(city, seed, count) {
     const x = pick(rng, AVENUES) + range(rng, -14, 14);
     const y = range(rng, 100, WORLD_H - 100);
     const dir = pick(rng, [0, Math.PI / 2, Math.PI, -Math.PI / 2]);
-    const car = makeCar(x, y, dir, pick(rng, PALETTE.carColors), pick(rng, ['Sedan', 'Hatch', 'Taxi', 'Truck']));
+    const car = makeCar(x, y, dir, pick(rng, PALETTE.carColors), pick(rng, ['Sedan', 'Hatch', 'Taxi', 'Truck', 'Van', 'Coupe']));
     car.cruise = range(rng, 130, 210);
     car.parked = false;
     cars.push(car);

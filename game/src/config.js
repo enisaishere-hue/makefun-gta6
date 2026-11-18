@@ -49,18 +49,21 @@ export const PALETTE = {
   buildingRoof: ['#7a4a3a', '#4a5a7a', '#6a6a72', '#8a6a3a', '#5a7a5a', '#7a3a5a', '#3a6a6a'],
   buildingEdge: '#22242a',
   downtownGlow: '#ff9a3c',
-  carColors: ['#c0392b', '#2980b9', '#f1c40f', '#7f8c8d', '#8e44ad', '#16a085', '#e67e22', '#ecf0f1'],
+  carColors: ['#c0392b', '#2980b9', '#f1c40f', '#7f8c8d', '#8e44ad', '#16a085', '#e67e22', '#ecf0f1', '#ff6b9d', '#2ecc71', '#34495e', '#d35400', '#1abc9c', '#f5d76e'],
   playerJacket: '#e74c3c',
   copBlue: '#2c4a8a',
   copCar: '#e8e8e8',
 };
 
-export const MISSION_PAY = [300, 450, 700, 1200];
+export const MISSION_PAY = [300, 450, 700, 1200, 1500, 1200, 6650];
 export const MISSION_NAMES = [
   'First Delivery',
   'Borrowed Wheels',
   'Heat Run',
   'Harbor Kings',
+  "Kings' Payback",
+  'Night Shift',
+  'The Last Score',
 ];
 
 export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
