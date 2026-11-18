@@ -1,75 +1,74 @@
-// Tuning and world constants for Neon Harbor, an original open-world crime game.
-// Everything here is invented: the city Port Meridian, its people and its story are
-// this game's own, with nothing taken from any commercial game.
-export const STEP = 1 / 60;
-export const WORLD = { width: 2560, height: 1920 };
-export const SAVE_KEY = 'neon-harbor-save-v1';
-export const BEST_KEY = 'neon-harbor-best-v1';
-
-// Avenues (vertical roads) and streets (horizontal roads), each 96 px wide.
-export const AVENUES = [320, 800, 1280, 1760, 2240];
-export const STREETS = [300, 700, 1100, 1500];
+// Neon Harbor — tuning constants and shared palette.
+// One clear job: every number the rest of the game agrees on lives here.
+export const WORLD_W = 2560;
+export const WORLD_H = 1920;
 export const ROAD_W = 96;
-export const WATER_TOP = 1700; // the harbor: water south of this line
+export const AVENUES = [320, 800, 1280, 1760, 2240];
+export const STREETS = [320, 720, 1120, 1520];
+export const START_CASH = 40;
+export const DEBT_TOTAL = 12000;
+export const MAX_WANTED = 5;
+export const BUSTED_FINE = 150;
+export const WASTED_FINE = 100;
 
 export const PLAYER = {
   radius: 13,
-  walkSpeed: 210,
-  sprintSpeed: 320,
-  health: 100,
-  punchDamage: 25,
+  walkSpeed: 170,
+  sprintSpeed: 265,
+  maxHealth: 100,
   pistolDamage: 34,
   pistolAmmo: 12,
-  pistolRange: 420,
+  pistolReserve: 48,
+  punchDamage: 12,
+  fireCooldown: 0.22,
+  reloadTime: 1.1,
 };
 
 export const CAR = {
-  length: 54,
-  width: 26,
-  maxSpeed: 560,
   accel: 420,
-  brake: 700,
-  reverseMax: 180,
-  turnRate: 2.6,
-  health: 100,
+  reverseAccel: 260,
+  maxSpeed: 520,
+  maxReverse: 160,
+  steerRate: 2.6,
+  grip: 3.2,
+  drag: 0.55,
+  offroadDrag: 1.6,
+  maxHealth: 100,
+  radius: 15,
 };
 
-export const WANTED = {
-  decayDelay: 18, // seconds without a crime before stars start falling
-  decayPeriod: 9, // seconds per star lost while unseen
-  maxStars: 5,
-  copCarPerStar: 1,
-  footCopPerStar: 1,
-};
-
-// Sun-soaked coastal palette: warm sand, terracotta, teal and palm green.
 export const PALETTE = {
-  grass: '#7fae62',
-  sand: '#d9c08a',
-  asphalt: '#3a3f4a',
-  asphaltDark: '#33373f',
-  sidewalk: '#9a938a',
-  lane: '#e8d44d',
-  water: '#2e7f9e',
-  waterDeep: '#256b87',
-  building: ['#c96f4a', '#d9a05b', '#7fa8a0', '#b5533c', '#8a6f9e', '#5b7fa6', '#a8895f', '#4f8a6d'],
-  roof: ['#8a4a34', '#6b5a44', '#4a6b66', '#7a3a30', '#5a4a72', '#3f5a78', '#7a6248', '#3a6b52'],
-  car: ['#d94f3d', '#3d7fd9', '#e8c33d', '#e8e8e8', '#2b2b33', '#7fc94f', '#d97fb0', '#f08a2e'],
-  copCar: '#2b4fd9',
-  pedShirt: ['#e86a6a', '#6aa8e8', '#e8d06a', '#8ae86a', '#c96ae8', '#e8a06a', '#6ae8d8'],
+  grass: '#2e6b34',
+  grassDark: '#27592d',
+  road: '#33373d',
+  roadLine: '#e8c93a',
+  sidewalk: '#8a8f96',
+  water: '#1d5f8a',
+  waterDeep: '#14486b',
+  sand: '#c9b078',
+  buildingRoof: ['#7a4a3a', '#4a5a7a', '#6a6a72', '#8a6a3a', '#5a7a5a', '#7a3a5a', '#3a6a6a'],
+  buildingEdge: '#22242a',
+  downtownGlow: '#ff9a3c',
+  carColors: ['#c0392b', '#2980b9', '#f1c40f', '#7f8c8d', '#8e44ad', '#16a085', '#e67e22', '#ecf0f1'],
+  playerJacket: '#e74c3c',
+  copBlue: '#2c4a8a',
+  copCar: '#e8e8e8',
 };
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
-
-// Keyboard + mouse controls shown on the title screen and the HUD.
-export const CONTROLS = [
-  ['W A S D', 'Move / drive'],
-  ['Mouse', 'Aim, click to shoot'],
-  ['E', 'Enter / exit car'],
-  ['F', 'Punch'],
-  ['R', 'Reload pistol'],
-  ['Shift', 'Sprint'],
-  ['Space', 'Handbrake'],
-  ['P / Esc', 'Pause'],
-  ['M', 'Mute'],
+export const MISSION_PAY = [300, 450, 700, 1200];
+export const MISSION_NAMES = [
+  'First Delivery',
+  'Borrowed Wheels',
+  'Heat Run',
+  'Harbor Kings',
 ];
+
+export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+export function lerp(a, b, t) { return a + (b - a) * t; }
+export function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; }
+export function angleLerp(a, b, t) {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}

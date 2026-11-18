@@ -1,492 +1,409 @@
-// Drawing only: the world's state and the current screen in, pixels out. A camera
-// follows the player over Port Meridian; the HUD, the minimap and the menus are
-// drawn on top. Flat shapes, canvas text, and a warm late-afternoon light.
-import { AVENUES, CAR, CONTROLS, FONT, PALETTE, ROAD_W, STREETS, WATER_TOP, WORLD } from './config.js';
-import { currentMission, currentObjective } from './missions.js';
+// Neon Harbor — everything on screen: the city, the cars, the people, the
+// HUD with its minimap, and the title / pause / game-over screens.
+import { WORLD_W, WORLD_H, ROAD_W, AVENUES, STREETS, PALETTE, DEBT_TOTAL, MISSION_NAMES } from './config.js';
+import { districtAt } from './world.js';
 
-export const SCREEN_TITLE = 'title';
-export const SCREEN_PLAY = 'play';
-export const SCREEN_PAUSED = 'paused';
-export const SCREEN_OVER = 'over';
-export const SCREEN_STORY = 'story';
-
-const MINIMAP = { w: 230, h: 172, margin: 16 };
-
-export function createRenderer(canvas) {
-  const context = canvas.getContext('2d');
-  const view = { scale: 1, dpr: 1, width: 0, height: 0 };
-  const fonts = new Map();
-
-  function resize() {
-    const ratio = window.devicePixelRatio || 1;
-    view.dpr = ratio;
-    view.width = window.innerWidth;
-    view.height = window.innerHeight;
-    canvas.width = Math.round(window.innerWidth * ratio);
-    canvas.height = Math.round(window.innerHeight * ratio);
+export function drawWorld(ctx, city, cam, time) {
+  const { x: cx, y: cy } = cam;
+  ctx.fillStyle = PALETTE.grass;
+  ctx.fillRect(0, 0, 1280, 720);
+  // Mow stripes for the grass.
+  ctx.fillStyle = PALETTE.grassDark;
+  for (let gy = 0; gy < WORLD_H; gy += 160) {
+    const sy = gy - cy;
+    if (sy > -160 && sy < 720) ctx.fillRect(0, sy, 1280, 80);
   }
-
-  function text(value, x, y, size, color, align = 'left', weight = '') {
-    const key = `${weight}${size}`;
-    if (!fonts.has(key)) fonts.set(key, `${weight} ${size}px ${FONT}`);
-    context.font = fonts.get(key);
-    context.fillStyle = color;
-    context.textAlign = align;
-    context.textBaseline = 'alphabetic';
-    context.fillText(value, x, y);
+  for (const park of city.parks) {
+    ctx.fillStyle = '#3a7d44';
+    ctx.fillRect(park.x - cx, park.y - cy, park.w, park.h);
+    ctx.fillStyle = '#2a6b34';
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(park.x - cx + park.w * (0.25 + i * 0.25), park.y - cy + park.h * 0.5, 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
-
-  // Screen (CSS) pixels -> world coordinates, for aiming with the mouse.
-  function screenToWorld(sx, sy, state) {
-    const cam = state.camera;
-    const cx = view.width / 2;
-    const cy = view.height / 2;
-    const shx = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
-    const shy = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
-    return {
-      x: cam.x + (sx - cx - shx) / cam.zoom,
-      y: cam.y + (sy - cy - shy) / cam.zoom,
-    };
+  for (const lot of city.lots) {
+    ctx.fillStyle = '#6a6e75';
+    ctx.fillRect(lot.x - cx, lot.y - cy, lot.w, lot.h);
+    ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 2;
+    for (let i = 0; i < Math.floor(lot.w / 46); i++) {
+      ctx.beginPath();
+      ctx.moveTo(lot.x - cx + 12 + i * 46, lot.y - cy + 10);
+      ctx.lineTo(lot.x - cx + 12 + i * 46, lot.y - cy + 34);
+      ctx.stroke();
+    }
   }
-
-  function drawCity(state, city) {
-    const cam = state.camera;
-    const vw = view.width / cam.zoom;
-    const vh = view.height / cam.zoom;
-    const x0 = cam.x - vw / 2 - 60;
-    const y0 = cam.y - vh / 2 - 60;
-    const x1 = cam.x + vw / 2 + 60;
-    const y1 = cam.y + vh / 2 + 60;
-
-    // Ground: grass, sand along the harbor, water to the south.
-    context.fillStyle = PALETTE.grass;
-    context.fillRect(x0, y0, x1 - x0, y1 - y0);
-    const sandTop = Math.max(y0, WATER_TOP - 90);
-    const sandBottom = Math.min(y1, WATER_TOP);
-    if (sandBottom > sandTop) {
-      context.fillStyle = PALETTE.sand;
-      context.fillRect(x0, sandTop, x1 - x0, sandBottom - sandTop);
-    }
-    const waterTop = Math.max(y0, WATER_TOP);
-    if (y1 > waterTop) {
-      context.fillStyle = PALETTE.water;
-      context.fillRect(x0, waterTop, x1 - x0, y1 - waterTop);
-    }
-    context.fillStyle = PALETTE.waterDeep;
-    for (let x = Math.floor(x0 / 90) * 90; x < x1; x += 90) {
-      context.fillRect(x, WATER_TOP + 30 + ((x / 90) % 3) * 40, 46, 5);
-    }
-    // The pier.
-    context.fillStyle = '#8a6b48';
-    context.fillRect(1210, WATER_TOP - 130, 140, 130);
-    context.fillStyle = '#6b543a';
-    for (let y = WATER_TOP - 120; y < WATER_TOP; y += 18) context.fillRect(1210, y, 140, 3);
-
-    // Roads and sidewalks.
-    for (const ax of AVENUES) {
-      context.fillStyle = PALETTE.sidewalk;
-      context.fillRect(ax - ROAD_W / 2 - 14, y0, ROAD_W + 28, y1 - y0);
-      context.fillStyle = PALETTE.asphalt;
-      context.fillRect(ax - ROAD_W / 2, y0, ROAD_W, y1 - y0);
-    }
-    for (const sy of STREETS) {
-      context.fillStyle = PALETTE.sidewalk;
-      context.fillRect(x0, sy - ROAD_W / 2 - 14, x1 - x0, ROAD_W + 28);
-      context.fillStyle = PALETTE.asphalt;
-      context.fillRect(x0, sy - ROAD_W / 2, x1 - x0, ROAD_W);
-    }
-    // Lane dashes.
-    context.fillStyle = PALETTE.lane;
-    for (const ax of AVENUES) {
-      for (let y = Math.floor(y0 / 44) * 44; y < y1; y += 44) {
-        if (y > WATER_TOP) continue;
-        context.fillRect(ax - 2, y, 4, 22);
+  // Harbor water + piers.
+  const w = city.harbor.water;
+  ctx.fillStyle = PALETTE.water;
+  ctx.fillRect(w.x - cx, w.y - cy, w.w, w.h);
+  ctx.fillStyle = PALETTE.waterDeep;
+  for (let i = 0; i < 24; i++) {
+    const wx = ((i * 173 + time * 12) % WORLD_W) - cx;
+    ctx.fillRect(wx, w.y - cy + 20 + (i % 4) * 26, 60, 3);
+  }
+  ctx.fillStyle = PALETTE.sand;
+  ctx.fillRect(0, w.y - cy - 8, 1280, 8);
+  for (const pier of city.harbor.piers) {
+    ctx.fillStyle = '#8a6a4a';
+    ctx.fillRect(pier.x - cx, pier.y - cy, pier.w, pier.h);
+  }
+  // Roads.
+  ctx.fillStyle = PALETTE.road;
+  for (const ax of AVENUES) ctx.fillRect(ax - ROAD_W / 2 - cx, -cy, ROAD_W, WORLD_H);
+  for (const sy of STREETS) ctx.fillRect(-cx, sy - ROAD_W / 2 - cy, WORLD_W, ROAD_W);
+  ctx.fillStyle = PALETTE.sidewalk;
+  for (const ax of AVENUES) {
+    ctx.fillRect(ax - ROAD_W / 2 - 10 - cx, -cy, 10, WORLD_H);
+    ctx.fillRect(ax + ROAD_W / 2 - cx, -cy, 10, WORLD_H);
+  }
+  for (const sy of STREETS) {
+    ctx.fillRect(-cx, sy - ROAD_W / 2 - 10 - cy, WORLD_W, 10);
+    ctx.fillRect(-cx, sy + ROAD_W / 2 - cy, WORLD_W, 10);
+  }
+  // Center dashes.
+  ctx.fillStyle = PALETTE.roadLine;
+  for (const ax of AVENUES) {
+    for (let y = 0; y < WORLD_H; y += 64) ctx.fillRect(ax - 2 - cx, y - cy, 4, 30);
+  }
+  for (const sy of STREETS) {
+    for (let x = 0; x < WORLD_W; x += 64) ctx.fillRect(x - cx, sy - 2 - cy, 30, 4);
+  }
+  // Buildings with lit windows at night.
+  for (const b of city.buildings) {
+    const bx = b.x - cx, by = b.y - cy;
+    if (bx > 1280 || by > 720 || bx + b.w < 0 || by + b.h < 0) continue;
+    ctx.fillStyle = '#00000033';
+    ctx.fillRect(bx + 6, by + 6, b.w, b.h);
+    ctx.fillStyle = b.color;
+    ctx.fillRect(bx, by, b.w, b.h);
+    ctx.strokeStyle = PALETTE.buildingEdge; ctx.lineWidth = 2;
+    ctx.strokeRect(bx, by, b.w, b.h);
+    ctx.fillStyle = '#ffffff22';
+    ctx.fillRect(bx + 6, by + 6, b.w - 12, 10);
+    if (b.lit) {
+      ctx.fillStyle = '#ffd76a';
+      const cols = Math.max(1, Math.floor(b.w / 34)), rows = Math.max(1, Math.floor(b.h / 34));
+      for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+        if (((i * 7 + j * 3 + (b.x | 0)) % 5) < 2) ctx.fillRect(bx + 10 + i * 34, by + 22 + j * 34, 12, 14);
       }
     }
-    for (const sy of STREETS) {
-      for (let x = Math.floor(x0 / 44) * 44; x < x1; x += 44) {
-        context.fillRect(x, sy - 2, 22, 4);
-      }
-    }
-
-    // Blocks: parks, the plaza, and the buildings with lit windows.
-    for (const block of city.blocks) {
-      if (block.x > x1 || block.x + block.w < x0 || block.y > y1 || block.y + block.h < y0) continue;
-      if (block.kind === 'park') {
-        context.fillStyle = '#5d9448';
-        context.fillRect(block.x, block.y, block.w, block.h);
-        for (const t of block.trees) drawTree(t.x, t.y, t.r);
-      } else if (block.kind === 'plaza') {
-        context.fillStyle = '#b8a888';
-        context.fillRect(block.x, block.y, block.w, block.h);
-        context.fillStyle = '#8a7a5a';
-        context.beginPath();
-        context.arc(block.x + block.w / 2, block.y + block.h / 2, 26, 0, Math.PI * 2);
-        context.fill();
-      }
-      for (const b of block.buildings) {
-        context.fillStyle = 'rgba(0,0,0,0.25)';
-        context.fillRect(b.x + 6, b.y + 8, b.w, b.h);
-        context.fillStyle = b.color;
-        context.fillRect(b.x, b.y, b.w, b.h);
-        context.fillStyle = b.roof;
-        context.fillRect(b.x + 5, b.y + 5, b.w - 10, b.h - 10);
-        context.fillStyle = '#ffe9a8';
-        const cols = Math.max(1, Math.floor(b.w / 22));
-        const rows = Math.max(1, Math.floor(b.h / 24));
-        for (let cx = 0; cx < cols; cx += 1) {
-          for (let cy = 0; cy < rows; cy += 1) {
-            if ((cx * 7 + cy * 3 + b.floors) % 3 === 0) {
-              context.fillRect(b.x + 9 + cx * 22, b.y + 9 + cy * 24, 8, 10);
-            }
-          }
-        }
-      }
-    }
-    for (const t of city.trees) {
-      if (t.x > x0 && t.x < x1 && t.y > y0 && t.y < y1) drawTree(t.x, t.y, t.r);
-    }
   }
+  // Landmark labels.
+  ctx.font = 'bold 15px system-ui, sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('HOSPITAL', city.hospital.x - cx + 14, city.hospital.y - cy + 60);
+  ctx.fillText('DELIA\'S GARAGE', city.garage.x - cx + 8, city.garage.y - cy + 55);
+}
 
-  function drawTree(x, y, r) {
-    context.fillStyle = '#5a4632';
-    context.fillRect(x - 2, y - 2, 4, 12);
-    context.fillStyle = '#3f7a3a';
-    context.beginPath();
-    context.arc(x, y - 6, r, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = '#4f8a44';
-    context.beginPath();
-    context.arc(x - r * 0.4, y - r * 0.5, r * 0.6, 0, Math.PI * 2);
-    context.fill();
+export function drawCar(ctx, car, cam, time) {
+  const x = car.x - cam.x, y = car.y - cam.y;
+  if (x < -60 || y < -60 || x > 1340 || y > 780) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(car.angle);
+  ctx.fillStyle = '#00000044';
+  ctx.fillRect(-22, -12, 46, 28);
+  ctx.fillStyle = car.color;
+  roundRect(ctx, -24, -13, 48, 26, 7); ctx.fill();
+  ctx.fillStyle = '#1c2733';
+  roundRect(ctx, -8, -11, 16, 22, 4); ctx.fill();
+  ctx.fillStyle = '#dfe9f2';
+  ctx.fillRect(14, -11, 4, 22);
+  ctx.fillStyle = '#ffe9a8';
+  ctx.fillRect(22, -11, 3, 5); ctx.fillRect(22, 6, 3, 5);
+  ctx.fillStyle = '#ff3b30';
+  ctx.fillRect(-25, -11, 3, 5); ctx.fillRect(-25, 6, 3, 5);
+  if (car.special === 'police') {
+    ctx.fillStyle = '#2c4a8a';
+    ctx.fillRect(-6, -13, 12, 26);
+    const blink = Math.floor(time * 6) % 2 === 0;
+    ctx.fillStyle = blink ? '#ff2d2d' : '#2d7dff';
+    ctx.beginPath(); ctx.arc(0, -6, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = blink ? '#2d7dff' : '#ff2d2d';
+    ctx.beginPath(); ctx.arc(0, 6, 4, 0, Math.PI * 2); ctx.fill();
   }
-
-  function drawCar(car) {
-    context.save();
-    context.translate(car.x, car.y);
-    context.rotate(car.angle);
-    if (car.health < 40) {
-      context.fillStyle = 'rgba(60,60,60,0.5)';
-      context.beginPath();
-      context.arc(-8, -14, 7 + Math.random() * 4, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.fillStyle = '#1a1a1a';
-    context.fillRect(-CAR.length / 2 + 4, -CAR.width / 2 - 3, 10, 6);
-    context.fillRect(-CAR.length / 2 + 4, CAR.width / 2 - 3, 10, 6);
-    context.fillRect(CAR.length / 2 - 14, -CAR.width / 2 - 3, 10, 6);
-    context.fillRect(CAR.length / 2 - 14, CAR.width / 2 - 3, 10, 6);
-    context.fillStyle = car.color;
-    context.beginPath();
-    context.roundRect(-CAR.length / 2, -CAR.width / 2, CAR.length, CAR.width, 7);
-    context.fill();
-    context.fillStyle = 'rgba(20,30,40,0.85)';
-    context.beginPath();
-    context.roundRect(-6, -CAR.width / 2 + 4, 16, CAR.width - 8, 4);
-    context.fill();
-    if (car.kind === 'police') {
-      context.fillStyle = '#ffffff';
-      context.fillRect(-CAR.length / 2 + 6, -CAR.width / 2 + 2, CAR.length - 12, 5);
-      context.fillStyle = '#ff3b30';
-      context.fillRect(-4, -CAR.width / 2 - 1, 8, 4);
-      context.fillStyle = '#2b4fd9';
-      context.fillRect(-4, CAR.width / 2 - 3, 8, 4);
-    }
-    if (car.kind === 'van') {
-      context.fillStyle = 'rgba(255,255,255,0.75)';
-      context.fillRect(-CAR.length / 2 + 4, -CAR.width / 2 + 4, 8, CAR.width - 8);
-    }
-    context.restore();
+  if (car.special === 'comet') {
+    ctx.fillStyle = '#ffd76a';
+    ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.fillText('COMET S', -18, 4);
   }
-
-  function drawPerson(x, y, angle, shirt, down, isPlayer) {
-    context.save();
-    context.translate(x, y);
-    if (down) {
-      context.rotate(Math.PI / 2);
-      context.fillStyle = shirt;
-      context.beginPath();
-      context.ellipse(0, 0, 14, 8, 0, 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-      return;
-    }
-    context.rotate(angle);
-    context.fillStyle = 'rgba(0,0,0,0.25)';
-    context.beginPath();
-    context.ellipse(0, 4, 12, 6, 0, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = shirt;
-    context.beginPath();
-    context.arc(0, 0, 11, 0, Math.PI * 2);
-    context.fill();
-    context.fillStyle = '#e8b98a';
-    context.beginPath();
-    context.arc(7, 0, 6, 0, Math.PI * 2);
-    context.fill();
-    if (isPlayer) {
-      context.fillStyle = '#ffd94d';
-      context.beginPath();
-      context.arc(-4, -8, 3, 0, Math.PI * 2);
-      context.arc(-4, 8, 3, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.restore();
+  ctx.restore();
+  if (car.smoke > 0 && Math.random() < car.smoke * 0.5) {
+    ctx.fillStyle = '#88888888';
+    ctx.beginPath();
+    ctx.arc(x + (Math.random() * 20 - 10), y + (Math.random() * 20 - 10), 6 + Math.random() * 8, 0, Math.PI * 2);
+    ctx.fill();
   }
-
-  function drawObjectiveMarker(state) {
-    const o = currentObjective(state.missions);
-    if (!o || !state.missions.active) return;
-    const pulse = 1 + Math.sin(state.elapsed * 5) * 0.15;
-    context.save();
-    context.translate(o.x, o.y);
-    context.scale(pulse, pulse);
-    context.strokeStyle = '#ffd94d';
-    context.lineWidth = 4;
-    context.beginPath();
-    context.moveTo(0, -26);
-    context.lineTo(16, 0);
-    context.lineTo(0, 26);
-    context.lineTo(-16, 0);
-    context.closePath();
-    context.stroke();
-    context.fillStyle = 'rgba(255,217,77,0.25)';
-    context.fill();
-    context.restore();
-    text(o.label, o.x, o.y - 38, 15, '#ffd94d', 'center', '700 ');
+  if (car.dead) {
+    ctx.fillStyle = '#00000088';
+    ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff6b35';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText('WRECK', x - 20, y - 30);
   }
+}
 
-  function drawPickups(state) {
-    for (const pk of state.pickups) {
-      if (pk.taken) continue;
-      const bob = Math.sin(pk.bob) * 3;
-      context.save();
-      context.translate(pk.x, pk.y + bob);
-      if (pk.kind === 'cash') {
-        context.fillStyle = '#7fc94f';
-        context.beginPath();
-        context.arc(0, 0, 12, 0, Math.PI * 2);
-        context.fill();
-        text('$', 0, 5, 16, '#12340a', 'center', '700 ');
-      } else if (pk.kind === 'ammo') {
-        context.fillStyle = '#e8c33d';
-        context.fillRect(-10, -6, 20, 12);
-        text('AMMO', 0, 4, 9, '#3a2f00', 'center', '700 ');
-      } else {
-        context.fillStyle = '#ff6a6a';
-        context.fillRect(-10, -10, 20, 20);
-        context.fillStyle = '#ffffff';
-        context.fillRect(-2, -7, 4, 14);
-        context.fillRect(-7, -2, 14, 4);
-      }
-      context.restore();
-    }
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+export function drawPlayer(ctx, p, cam, time) {
+  const x = p.x - cam.x, y = p.y - cam.y;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(p.angle);
+  const bob = p.moving ? Math.sin(time * 14) * 2 : 0;
+  ctx.fillStyle = '#00000044';
+  ctx.beginPath(); ctx.ellipse(0, 6, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = PALETTE.playerJacket;
+  ctx.beginPath(); ctx.arc(0, bob * 0.3, 11, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#2c3e50';
+  ctx.fillRect(6, -4, 12, 8);
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(2, 0, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+export function drawPed(ctx, ped, cam) {
+  const x = ped.x - cam.x, y = ped.y - cam.y;
+  if (x < -20 || y < -20 || x > 1300 || y > 740) return;
+  const wob = Math.sin(ped.walkPhase) * 2;
+  ctx.fillStyle = '#00000033';
+  ctx.beginPath(); ctx.ellipse(x, y + 7, 8, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ped.shirt;
+  ctx.beginPath(); ctx.arc(x, y + wob * 0.3, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ped.skin;
+  ctx.beginPath(); ctx.arc(x + Math.cos(ped.angle) * 3, y + Math.sin(ped.angle) * 3, 4.5, 0, Math.PI * 2); ctx.fill();
+  if (ped.panic > 0) {
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.fillText('!', x + 9, y - 10);
   }
+}
 
-  function drawMinimap(state, city) {
-    const mw = MINIMAP.w;
-    const mh = MINIMAP.h;
-    const mx = view.width - mw - MINIMAP.margin;
-    const my = MINIMAP.margin;
-    const sx = mw / WORLD.width;
-    const sy = mh / WORLD.height;
-    context.save();
-    context.fillStyle = 'rgba(10,14,20,0.78)';
-    context.beginPath();
-    context.roundRect(mx - 6, my - 6, mw + 12, mh + 12, 8);
-    context.fill();
-    context.strokeStyle = 'rgba(255,255,255,0.25)';
-    context.lineWidth = 1;
-    context.stroke();
-    context.beginPath();
-    context.rect(mx, my, mw, mh);
-    context.clip();
-    context.fillStyle = '#23301f';
-    context.fillRect(mx, my, mw, mh);
-    context.fillStyle = '#4a4f58';
-    for (const ax of AVENUES) context.fillRect(mx + ax * sx - 2, my, 4, mh);
-    for (const s of STREETS) context.fillRect(mx, my + s * sy - 2, mw, 4);
-    context.fillStyle = '#2e7f9e';
-    context.fillRect(mx, my + 1700 * sy, mw, mh - 1700 * sy);
-    const o = currentObjective(state.missions);
-    if (o && state.missions.active) {
-      context.fillStyle = '#ffd94d';
-      context.beginPath();
-      context.arc(mx + o.x * sx, my + o.y * sy, 5, 0, Math.PI * 2);
-      context.fill();
-    }
-    for (const c of state.copCars) {
-      context.fillStyle = '#5a8cff';
-      context.beginPath();
-      context.arc(mx + c.x * sx, my + c.y * sy, 3, 0, Math.PI * 2);
-      context.fill();
-    }
-    context.fillStyle = '#ffffff';
-    context.beginPath();
-    context.arc(mx + state.player.x * sx, my + state.player.y * sy, 4, 0, Math.PI * 2);
-    context.fill();
-    context.strokeStyle = '#ffffff';
-    context.lineWidth = 1.5;
-    context.stroke();
-    context.restore();
-    text('PORT MERIDIAN', mx + mw, my + mh + 20, 12, 'rgba(255,255,255,0.75)', 'right', '700 ');
+export function drawCop(ctx, cop, cam) {
+  const x = cop.x - cam.x, y = cop.y - cam.y;
+  ctx.fillStyle = '#00000033';
+  ctx.beginPath(); ctx.ellipse(x, y + 7, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = PALETTE.copBlue;
+  ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(x + Math.cos(cop.angle) * 4, y + Math.sin(cop.angle) * 4, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1c2733';
+  ctx.fillRect(x - 6, y - 14, 12, 4);
+  if (cop.arrestHold > 0) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(x - 14, y - 26, 28 * Math.min(1, cop.arrestHold / 1.4), 4);
   }
+}
 
-  function drawHud(state) {
-    const p = state.player;
-    // Cash and wanted stars, top-left (clear of the Roblox-style menu corner is
-    // not a concern here, but the top-left stays readable on the contact sheet).
-    context.fillStyle = 'rgba(10,14,20,0.72)';
-    context.beginPath();
-    context.roundRect(14, 12, 250, 64, 8);
-    context.fill();
-    text(`$${state.cash}`, 28, 40, 26, '#7fc94f', 'left', '700 ');
-    for (let s = 0; s < 5; s += 1) {
-      text('★', 28 + s * 26, 66, 20, s < state.wanted.stars ? '#ffd94d' : 'rgba(255,255,255,0.25)', 'left');
-    }
-    // Health, ammo and speed, bottom-left.
-    context.fillStyle = 'rgba(10,14,20,0.72)';
-    context.beginPath();
-    context.roundRect(14, view.height - 58, 250, 44, 8);
-    context.fill();
-    context.fillStyle = '#3a3f4a';
-    context.fillRect(28, view.height - 44, 120, 12);
-    context.fillStyle = p.health > 30 ? '#7fc94f' : '#ff5a4d';
-    context.fillRect(28, view.height - 44, 120 * Math.max(0, p.health) / 100, 12);
-    text(p.car ? `${Math.round(Math.abs(p.car.speed) * 0.12)} mph` : `${p.ammo} / 12`, 160, view.height - 32, 16, '#ffffff', 'left', '700 ');
-    if (p.car) text(`CAR ${Math.min(100, Math.max(0, Math.round(p.car.health)))}%`, 28, view.height - 22, 12, '#c9c9c9', 'left');
-    else text('ON FOOT', 28, view.height - 22, 12, '#c9c9c9', 'left');
-
-    // Mission line, top-center.
-    const m = currentMission(state.missions);
-    if (state.missions.active && m) {
-      const o = currentObjective(state.missions);
-      context.fillStyle = 'rgba(10,14,20,0.72)';
-      const label = `${m.name} — ${o ? o.text : ''}`;
-      const w = Math.min(view.width - 320, 34 + label.length * 7.2);
-      context.beginPath();
-      context.roundRect((view.width - w) / 2, 12, w, 34, 8);
-      context.fill();
-      text(label, view.width / 2, 35, 16, '#ffd94d', 'center', '700 ');
-      if (state.missions.timer > 0) {
-        text(`${Math.ceil(state.missions.timer)}s`, view.width / 2, 58, 15, '#ff8a7a', 'center', '700 ');
-      }
-    } else if (state.missions.freeRoam && !state.storyDone) {
-      text('FREE ROAM — press Enter for the next job', view.width / 2, 34, 15, 'rgba(255,255,255,0.85)', 'center');
-    }
-    if (state.passenger) {
-      text(`Passenger: ${state.passenger}`, view.width / 2, view.height - 24, 14, '#ffd94d', 'center', '700 ');
-    }
-    drawMinimap(state);
-    // Flash messages.
-    if (state.missionFlashT > 0) {
-      context.fillStyle = 'rgba(10,14,20,0.72)';
-      const w = Math.min(view.width - 200, 40 + state.missionFlash.length * 7.5);
-      context.beginPath();
-      context.roundRect((view.width - w) / 2, view.height - 118, w, 34, 8);
-      context.fill();
-      text(state.missionFlash, view.width / 2, view.height - 95, 16, '#ffffff', 'center');
-    }
-    if (state.bustedFlash > 0) {
-      context.fillStyle = `rgba(20,40,160,${Math.min(0.55, state.bustedFlash * 0.3)})`;
-      context.fillRect(0, 0, view.width, view.height);
-      text('BUSTED', view.width / 2, view.height / 2, 64, '#ffffff', 'center', '900 ');
-    }
-    if (state.wastedFlash > 0) {
-      context.fillStyle = `rgba(160,20,20,${Math.min(0.55, state.wastedFlash * 0.3)})`;
-      context.fillRect(0, 0, view.width, view.height);
-      text('WASTED', view.width / 2, view.height / 2, 64, '#ffffff', 'center', '900 ');
-    }
+export function drawCombat(ctx, combat, cam) {
+  for (const pk of combat.pickups) {
+    const x = pk.x - cam.x, y = pk.y - cam.y + Math.sin(pk.bob) * 3;
+    if (x < -20 || y < -20 || x > 1300 || y > 740) continue;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = pk.kind === 'cash' ? '#2ecc71' : pk.kind === 'ammo' ? '#f1c40f' : '#e74c3c';
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(pk.kind === 'cash' ? '$' : pk.kind === 'ammo' ? 'A' : '+', 0, 4);
+    ctx.textAlign = 'left';
+    ctx.restore();
   }
-
-  function drawPanel(title, lines, prompt, accent) {
-    const w = 640;
-    const h = 150 + lines.length * 34;
-    const x = (view.width - w) / 2;
-    const y = (view.height - h) / 2;
-    context.fillStyle = 'rgba(8,12,18,0.88)';
-    context.beginPath();
-    context.roundRect(x, y, w, h, 12);
-    context.fill();
-    context.strokeStyle = accent || '#ffd94d';
-    context.lineWidth = 2;
-    context.stroke();
-    text(title, view.width / 2, y + 72, 46, accent || '#ffd94d', 'center', '900 ');
-    for (let i = 0; i < lines.length; i += 1) {
-      text(lines[i], view.width / 2, y + 118 + i * 34, 19, 'rgba(255,255,255,0.9)', 'center');
-    }
-    if (prompt) text(prompt, view.width / 2, y + h - 26, 19, '#ffd94d', 'center', '700 ');
+  for (const b of combat.bullets) {
+    ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(b.x - cam.x - b.vx * 0.012, b.y - cam.y - b.vy * 0.012);
+    ctx.lineTo(b.x - cam.x, b.y - cam.y);
+    ctx.stroke();
   }
-
-  function drawWorld(state, city) {
-    const cam = state.camera;
-    const shx = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
-    const shy = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
-    context.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-    context.fillStyle = '#10141c';
-    context.fillRect(0, 0, view.width, view.height);
-    context.setTransform(view.dpr * cam.zoom, 0, 0, view.dpr * cam.zoom,
-      view.dpr * (view.width / 2 - cam.x * cam.zoom + shx), view.dpr * (view.height / 2 - cam.y * cam.zoom + shy));
-    drawCity(state, city);
-    drawObjectiveMarker(state);
-    drawPickups(state);
-    // Bullets under the cars, particles above everything.
-    for (const b of state.bullets) {
-      context.fillStyle = '#ffe9a8';
-      context.beginPath();
-      context.arc(b.x, b.y, 3, 0, Math.PI * 2);
-      context.fill();
-    }
-    for (const car of state.cars) if (!car.dead) drawCar(car);
-    for (const car of state.copCars) drawCar(car);
-    for (const ped of state.peds) drawPerson(ped.x, ped.y, ped.angle, ped.shirt, ped.state === 'down', false);
-    for (const cop of state.footCops) if (!cop.dead) drawPerson(cop.x, cop.y, cop.angle, cop.shirt, false, false);
-    const p = state.player;
-    if (!p.car) {
-      const blink = p.invulnerable > 0 && Math.floor(p.invulnerable * 10) % 2 === 0;
-      if (!blink) drawPerson(p.x, p.y, p.angle, '#3d7fd9', false, true);
-    }
-    for (const pt of state.particles) {
-      context.globalAlpha = Math.max(0, pt.life * 1.6);
-      context.fillStyle = pt.color;
-      context.fillRect(pt.x - pt.size / 2, pt.y - pt.size / 2, pt.size, pt.size);
-    }
-    context.globalAlpha = 1;
-    for (const f of state.floats) {
-      context.globalAlpha = Math.min(1, f.life);
-      text(f.text, f.x, f.y, 17, f.color, 'center', '700 ');
-    }
-    context.globalAlpha = 1;
-    // Back to screen space for the HUD.
-    context.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  for (const pt of combat.particles) {
+    ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+    ctx.fillStyle = pt.color;
+    ctx.fillRect(pt.x - cam.x - pt.size / 2, pt.y - cam.y - pt.size / 2, pt.size, pt.size);
   }
-
-  function draw(state, city, screen, extra) {
-    resize();
-    drawWorld(state, city);
-    if (screen === SCREEN_TITLE) {
-      const lines = [
-        'Port Meridian, 6:47 PM. Jax Marlowe owes the Harbor Kings $12,000.',
-        'Delia Voss will clear the debt — one job at a time.',
-        '',
-        'WASD move / drive · Mouse aim · E enter car · F punch · R reload',
-        'Steal cars, outrun the police, finish all four jobs.',
-      ];
-      drawPanel('NEON HARBOR', lines, 'Press Enter or click: 1 Story · 2 Free roam', '#ffd94d');
-      if (extra && extra.best > 0) text(`Best cash: $${extra.best}`, view.width / 2, view.height / 2 + 190, 17, 'rgba(255,255,255,0.8)', 'center');
-      return;
-    }
-    drawHud(state);
-    if (screen === SCREEN_PAUSED) {
-      drawPanel('Paused', ['The city waits for no one. Except now.'], 'Press P to resume · Enter restarts the story', '#7fc94f');
-    } else if (screen === SCREEN_OVER) {
-      drawPanel('Game over', [`Cash kept: $${state.cash}`, `Jobs done: ${state.missions.index} of 4`], 'Press Enter to play again', '#ff5a4d');
-    } else if (screen === SCREEN_STORY) {
-      drawPanel('Story complete', ['The debt is paid. Port Meridian is yours, Jax.', `Final cash: $${state.cash}`], 'Press Enter for free roam', '#7fc94f');
-    }
+  ctx.globalAlpha = 1;
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  for (const f of combat.floaters) {
+    ctx.globalAlpha = Math.max(0, f.life);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x - cam.x, f.y - cam.y);
   }
+  ctx.globalAlpha = 1; ctx.textAlign = 'left';
+}
 
-  resize();
-  window.addEventListener('resize', resize);
-  return { draw, screenToWorld };
+export function drawTarget(ctx, target, cam, time) {
+  if (!target) return;
+  const x = target.x - cam.x, y = target.y - cam.y;
+  const pulse = 1 + Math.sin(time * 5) * 0.15;
+  if (x > -40 && y > -40 && x < 1320 && y < 760) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 4;
+    const s = 16 * pulse;
+    ctx.strokeRect(-s / 2, -s / 2, s, s);
+    ctx.restore();
+    ctx.fillStyle = '#ffd76a';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(target.label || 'GO', x, y - 26);
+    ctx.textAlign = 'left';
+  }
+}
+
+export function drawHUD(ctx, S) {
+  const p = S.player;
+  ctx.fillStyle = '#00000088';
+  ctx.fillRect(0, 0, 1280, 46);
+  ctx.fillStyle = '#2ecc71';
+  ctx.font = 'bold 22px system-ui, sans-serif';
+  ctx.fillText('$' + p.cash.toLocaleString('en-US'), 16, 32);
+  ctx.fillStyle = '#e74c3c';
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillText('DEBT $' + (DEBT_TOTAL - S.earned).toLocaleString('en-US'), 130, 30);
+  // Wanted stars.
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i < S.wanted.stars ? '#ffd76a' : '#555';
+    ctx.font = '26px system-ui, sans-serif';
+    ctx.fillText('★', 330 + i * 30, 32);
+  }
+  // Health bar.
+  ctx.fillStyle = '#222';
+  ctx.fillRect(500, 14, 150, 16);
+  ctx.fillStyle = p.health > 30 ? '#2ecc71' : '#e74c3c';
+  ctx.fillRect(500, 14, 150 * Math.max(0, p.health) / 100, 16);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  ctx.fillText('HP ' + Math.ceil(Math.max(0, p.health)), 505, 26);
+  // Ammo / speed.
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 16px system-ui, sans-serif';
+  if (p.inCar) {
+    const sp = Math.round(Math.hypot(p.inCar.vx, p.inCar.vy) * 0.22);
+    ctx.fillText(sp + ' MPH', 690, 31);
+    ctx.fillText('CAR ' + Math.ceil(p.inCar.health) + '%', 780, 31);
+  } else {
+    ctx.fillText('AMMO ' + p.ammo + ' / ' + p.reserve, 690, 31);
+  }
+  ctx.fillStyle = '#9fb4c8';
+  ctx.font = '14px system-ui, sans-serif';
+  ctx.fillText(districtAt(S.city, p.inCar ? p.inCar.x : p.x, p.inCar ? p.inCar.y : p.y), 900, 30);
+  ctx.fillText(S.timeStr, 1080, 30);
+  // Mission line.
+  if (S.missions.text) {
+    ctx.fillStyle = '#00000099';
+    ctx.fillRect(16, 56, 700, 30);
+    ctx.fillStyle = '#ffd76a';
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    let line = 'JOB ' + (S.missions.index + 1) + '/4 — ' + MISSION_NAMES[Math.min(3, S.missions.index)] + ': ' + S.missions.text;
+    if (S.missions.timer > 0) line += '  [' + Math.ceil(S.missions.timer) + 's]';
+    ctx.fillText(line.slice(0, 110), 24, 76);
+  }
+  // Controls hint.
+  ctx.fillStyle = '#ffffffaa';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText('WASD move/drive · Mouse aim · Click shoot · R reload · E enter car · Shift sprint · Space handbrake · P pause · M mute', 16, 708);
+  drawMinimap(ctx, S);
+}
+
+export function drawMinimap(ctx, S) {
+  const mw = 220, mh = 165, mx = 1280 - mw - 14, my = 720 - mh - 14;
+  const sx = mw / WORLD_W, sy = mh / WORLD_H;
+  ctx.fillStyle = '#000000aa';
+  ctx.fillRect(mx - 4, my - 4, mw + 8, mh + 8);
+  ctx.fillStyle = '#1d4a2a';
+  ctx.fillRect(mx, my, mw, mh);
+  ctx.fillStyle = '#555';
+  for (const ax of AVENUES) ctx.fillRect(mx + ax * sx - 2, my, 4, mh);
+  for (const sy2 of STREETS) ctx.fillRect(mx, my + sy2 * sy - 2, mw, 4);
+  ctx.fillStyle = '#1d5f8a';
+  ctx.fillRect(mx, my + 1780 * sy, mw, mh - 1780 * sy);
+  const p = S.player;
+  const px = p.inCar ? p.inCar.x : p.x, py = p.inCar ? p.inCar.y : p.y;
+  if (S.missions.target) {
+    const tx = mx + S.missions.target.x * sx, ty = my + S.missions.target.y * sy;
+    ctx.fillStyle = '#ffd76a';
+    ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
+  }
+  for (const car of S.police.cars) {
+    ctx.fillStyle = '#2d7dff';
+    ctx.fillRect(mx + car.x * sx - 2, my + car.y * sy - 2, 4, 4);
+  }
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(mx + px * sx, my + py * sy, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(mx + px * sx, my + py * sy, 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.fillText('PORT MERIDIAN', mx + 4, my + 14);
+}
+
+function screenPanel(ctx, title, lines, accent) {
+  ctx.fillStyle = '#000000d8';
+  ctx.fillRect(0, 0, 1280, 720);
+  ctx.fillStyle = accent || '#ffd76a';
+  ctx.font = 'bold 64px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(title, 640, 200);
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px system-ui, sans-serif';
+  lines.forEach((l, i) => ctx.fillText(l, 640, 260 + i * 36));
+  ctx.textAlign = 'left';
+}
+
+export function drawTitle(ctx, S) {
+  // A live city backdrop behind the title: draw the world at the start spot.
+  drawWorld(ctx, S.city, S.cam, S.time);
+  ctx.fillStyle = '#00000088';
+  ctx.fillRect(0, 0, 1280, 720);
+  ctx.fillStyle = '#ffd76a';
+  ctx.font = 'bold 84px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('NEON HARBOR', 640, 220);
+  ctx.fillStyle = '#fff';
+  ctx.font = '26px system-ui, sans-serif';
+  ctx.fillText('A Port Meridian story — open-world crime in the sun', 640, 268);
+  ctx.font = '19px system-ui, sans-serif';
+  ctx.fillText('Jax Marlowe owes the Harbor Kings $12,000.', 640, 330);
+  ctx.fillText('Fixer Delia Voss has four jobs that pay it down.', 640, 360);
+  ctx.fillText('Steal cars. Outrun the law. Get paid.', 640, 390);
+  ctx.fillStyle = '#ffd76a';
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/4 jobs done' : 'Press ENTER to start', 640, 470);
+  ctx.fillStyle = '#9fb4c8';
+  ctx.font = '16px system-ui, sans-serif';
+  ctx.fillText('WASD move & drive · Mouse aim · Click shoot · E enter car · P pause', 640, 520);
+  ctx.textAlign = 'left';
+}
+
+export function drawPause(ctx) {
+  screenPanel(ctx, 'PAUSED', ['Press P to keep playing', 'M mute · R reload · E enter or leave a car'], '#9fb4c8');
+}
+
+export function drawBusted(ctx, fine) {
+  screenPanel(ctx, 'BUSTED', ['The Port Meridian police hauled you in.', 'Fine: $' + fine + ' — you wake up at the hospital.', 'Press ENTER to walk free'], '#2d7dff');
+}
+
+export function drawWasted(ctx, fine) {
+  screenPanel(ctx, 'WASTED', ['You flatlined on a Meridian street.', 'Hospital bill: $' + fine, 'Press ENTER to get back up'], '#e74c3c');
+}
+
+export function drawStoryDone(ctx, S) {
+  screenPanel(ctx, 'STORY COMPLETE', [
+    'All four jobs done. The Harbor Kings are paid, and Jax walks free.',
+    'Cash earned: $' + S.earned.toLocaleString('en-US') + ' · Jobs: 4/4',
+    'Free roam continues — press ENTER to keep playing Port Meridian',
+  ], '#2ecc71');
 }

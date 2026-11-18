@@ -1,153 +1,88 @@
-// The screenshot scenes behind ?shot=chase|drive|mission|title. Each one plays the
-// real rules forward from a fresh world for a fixed number of steps, steered by a
-// simple autopilot, so the frame is what a short game really looks like and the
-// same seed always gives the same frame.
-import { STEP } from './config.js';
-import { PLACES, onRoad } from './city.js';
-import { makeCar } from './vehicles.js';
-import { enterCar } from './player.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// Neon Harbor — deterministic screenshot poses (?shot=<name>&seed=1) and the
+// autopilot that stages them. The autopilot brakes INTO turns: it coasts and
+// pulls the handbrake when the road bends, never accelerating through walls.
+import { makeCar } from './player.js';
+import { addHeat } from './police.js';
+import { startMission } from './missions.js';
+import { clamp } from './config.js';
 
-// A fake input for staged scenes: full throttle, steering that follows the road
-// loop around one downtown block, never shooting. The car stays inside the city.
-// `startIndex` picks the first waypoint so the car's first leg runs along a road,
-// not diagonally across a block.
-function loopInput(world, startIndex) {
-  const loop = [
-    { x: 800, y: 700 }, { x: 1280, y: 700 }, { x: 1280, y: 1100 }, { x: 800, y: 1100 },
-  ];
-  let index = startIndex;
-  const input = {
-    keys: { up: true, down: false, left: false, right: false, sprint: false, brake: false },
-    mouse: { x: 0, y: 0, down: false, clicked: false },
-    throttle() {
-      const p = world.state.player;
-      const target = loop[index];
-      const want = Math.atan2(target.y - p.y, target.x - p.x);
-      let diff = want - p.angle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      // Brake into a sharp turn: coast off the throttle, and pull the handbrake
-      // while still fast, so the car rounds the corner instead of smashing
-      // through the building past it. (A small throttle would still accelerate.)
-      const speed = p.car ? Math.abs(p.car.speed) : 0;
-      const turning = Math.abs(diff) > 0.5;
-      input.keys.brake = turning && speed > 200;
-      if (speed < 40) return 0.6;
-      if (turning) return 0;
-      return 1;
-    },
-    steer() {
-      const p = world.state.player;
-      const target = loop[index];
-      const want = Math.atan2(target.y - p.y, target.x - p.x);
-      let diff = want - p.angle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      if (Math.hypot(target.x - p.x, target.y - p.y) < 160) index = (index + 1) % loop.length;
-      return Math.max(-1, Math.min(1, diff * 2));
-    },
-    moveX() { return 0; },
-    moveY() { return 0; },
-    aimAngle: null,
-    takeActions() { return 0; },
-    takeMouseClick() { return false; },
-  };
-  return input;
-}
+// A road-following route: avenue 1280 north, then west on street 720.
+const CHASE_ROUTE = [
+  { x: 1280, y: 1500 }, { x: 1280, y: 1120 }, { x: 1280, y: 720 },
+  { x: 800, y: 720 }, { x: 320, y: 720 }, { x: 320, y: 320 },
+];
+const DRIVE_ROUTE = [
+  { x: 1280, y: 1120 }, { x: 1280, y: 720 }, { x: 1760, y: 720 },
+  { x: 1760, y: 1120 }, { x: 1280, y: 1120 },
+];
 
-// A still input for on-foot scenes: the player stands where placed.
-function stillInput() {
-  return {
-    keys: { up: false, down: false, left: false, right: false, sprint: false, brake: false },
-    mouse: { x: 0, y: 0, down: false, clicked: false },
-    throttle() { return 0; },
-    steer() { return 0; },
-    moveX() { return 0; },
-    moveY() { return 0; },
-    aimAngle: null,
-    takeActions() { return 0; },
-    takeMouseClick() { return false; },
-  };
-}
-
-function putPlayerInCar(world, x, y, angle, color, kind) {
-  const car = makeCar(x, y, angle, color, { kind: kind || 'traffic' });
-  world.state.cars.push(car);
-  enterCar(world.state.player, car);
-  return car;
-}
-
-function runSteps(world, input, seconds) {
-  const steps = Math.floor(seconds / STEP);
-  for (let i = 0; i < steps; i += 1) world.step(STEP, input, 0);
-}
-
-// Step forward in small slices and stop at the first moment after `minSeconds` that
-// looks like the scene should: the player driving fast on a road, and for the
-// chase a police car close behind. The frame is still the real simulation, just
-// caught at a good moment instead of at a fixed clock time.
-function runUntil(world, input, seconds, minSeconds, goodFrame) {
-  const slice = 0.25;
-  let t = 0;
-  while (t < seconds) {
-    runSteps(world, input, slice);
-    t += slice;
-    if (t >= minSeconds && goodFrame(world)) return;
+export function applyShot(S, name) {
+  const p = S.player;
+  S.shotMode = name;
+  S.shotTime = 0;
+  if (name === 'title') {
+    S.screen = 'title';
+    return;
   }
-}
-
-/**
- * Set `world` to the named scene and return the screen to draw over it and the
- * best cash to show. Scenes: chase (cover: a police pursuit at three stars),
- * drive (cruising downtown traffic), mission (on foot at the North Lot job),
- * title (the title screen over the living city).
- */
-export function stageShot(name, world) {
-  world.reset();
-  const s = world.state;
+  S.screen = 'playing';
   if (name === 'chase') {
-    s.missions.active = true;
-    s.missions.index = 2;
-    s.missions.objective = 1;
-    s.missions.timer = 0;
-    s.wanted.stars = 3;
-    s.wanted.sinceCrime = 0;
-    s.cash = 740;
-    const chaseCar = putPlayerInCar(world, 800, 700, 0, '#d94f3d', 'sport');
-    chaseCar.health = 200;
-    s.player.car.speed = 420;
-    runUntil(world, loopInput(world, 1), 12, 3, (w) => {
-      const p = w.state.player;
-      if (!p.car || Math.abs(p.car.speed) < 350) return false;
-      if (!onRoad(p.x, p.y)) return false;
-      return w.state.copCars.some((c) => Math.hypot(c.x - p.x, c.y - p.y) < 280);
-    });
-    return { screen: SCREEN_PLAY, best: 740 };
+    const car = makeCar(1280, 1500, -Math.PI / 2, '#c0392b', 'Comet S', { special: 'comet' });
+    S.allCars.push(car);
+    p.inCar = car; p.x = car.x; p.y = car.y;
+    S.autopilot = { route: CHASE_ROUTE, wp: 0 };
+    S.wanted.heat = 3.4; S.wanted.stars = 3; S.wanted.decayTimer = 99;
+    startMission(S.missions, 2);
+    S.missions.stage = 1;
+    S.missions.text = 'Package secured. Deliver it to the east docks.';
+    S.missions.target = { x: 320, y: 1120, label: 'Drop-off' };
+    S.sfx.setSiren(true);
   }
   if (name === 'drive') {
-    s.cash = 320;
-    const driveCar = putPlayerInCar(world, 800, 1100, -Math.PI / 2, '#3d7fd9', 'traffic');
-    driveCar.health = 200;
-    s.player.car.speed = 300;
-    runUntil(world, loopInput(world, 0), 12, 2, (w) => {
-      const p = w.state.player;
-      return !!p.car && Math.abs(p.car.speed) > 250 && onRoad(p.x, p.y);
-    });
-    return { screen: SCREEN_PLAY, best: 320 };
+    const car = makeCar(1280, 1120, -Math.PI / 2, '#c0392b', 'Comet S', { special: 'comet' });
+    S.allCars.push(car);
+    p.inCar = car; p.x = car.x; p.y = car.y;
+    S.autopilot = { route: DRIVE_ROUTE, wp: 0 };
+    startMission(S.missions, 1);
+    S.missions.stage = 1;
+    S.missions.text = 'Nice wheels. Now lose the heat and bring it to the garage.';
+    S.missions.target = { x: 700, y: 1360, label: 'Garage' };
   }
   if (name === 'mission') {
-    s.missions.active = true;
-    s.missions.index = 1;
-    s.missions.objective = 0;
-    world.setupObjective();
-    s.player.x = PLACES.northLot.x - 90;
-    s.player.y = PLACES.northLot.y + 60;
-    s.cash = 300;
-    runSteps(world, stillInput(), 4);
-    return { screen: SCREEN_PLAY, best: 300 };
+    p.inCar = null;
+    p.x = 1700; p.y = 618; // on the sidewalk, clear of passing traffic
+    p.angle = Math.atan2(720 - 618, 1760 - 1700);
+    startMission(S.missions, 2);
+    S.missions.text = 'Delia: grab the package on Meridian Ave. The heat is on — 3 stars.';
+    S.missions.target = { x: 1760, y: 720, label: 'Package' };
   }
-  // Title: the city alive behind the menu.
-  runSteps(world, stillInput(), 5);
-  return { screen: SCREEN_TITLE, best: 0 };
+}
+
+// Drive the player's car along the route, slowing for bends first.
+export function autopilotDrive(S, dt) {
+  const car = S.player.inCar;
+  const ap = S.autopilot;
+  if (!car || !ap) return { throttle: 0, steer: 0, handbrake: false };
+  const wp = ap.route[ap.wp];
+  const dx = wp.x - car.x, dy = wp.y - car.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 60) { ap.wp = (ap.wp + 1) % ap.route.length; return { throttle: 0, steer: 0, handbrake: false }; }
+  const targetAngle = Math.atan2(dy, dx);
+  let da = targetAngle - car.angle;
+  while (da > Math.PI) da -= Math.PI * 2;
+  while (da < -Math.PI) da += Math.PI * 2;
+  const speed = Math.hypot(car.vx, car.vy);
+  const bend = Math.abs(da);
+  // Look one waypoint ahead: if the route turns sharply after this one,
+  // shed speed early instead of arriving at the corner too hot to turn.
+  const nextWp = ap.route[(ap.wp + 1) % ap.route.length];
+  const turnAhead = Math.abs(((Math.atan2(nextWp.y - wp.y, nextWp.x - wp.x) - targetAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+  const closing = dist < 280 && turnAhead > 0.5;
+  // Brake into the turn: coast below 260, handbrake below 180 on sharp bends.
+  let throttle = 0.7, handbrake = false;
+  if (closing && speed > 200) { throttle = 0; handbrake = speed > 240; }
+  else if (bend > 0.9) { throttle = 0; handbrake = speed > 120; }
+  else if (bend > 0.45) { throttle = speed > 260 ? 0 : 0.4; }
+  else if (speed > 320) { throttle = 0.25; }
+  const steer = clamp(da * 1.8, -1, 1);
+  return { throttle, steer, handbrake };
 }
