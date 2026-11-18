@@ -53,9 +53,11 @@ export function updateEnemies(enemies, S, dt) {
   const py = p.inCar ? p.inCar.y : p.y;
 
   // The Kings send backup while the heat is high: at most two extra guns
-  // on the street, never spawned on top of the player.
+  // on the street, never spawned on top of the player — and never during
+  // Kings' Payback, where the job's own squad is the objective: backup
+  // arriving mid-job would make the "Left: N" count grow instead of fall.
   enemies.backupTimer -= dt;
-  if (S.wanted.stars >= 3 && enemies.list.length < 2 && enemies.backupTimer <= 0) {
+  if (S.wanted.stars >= 3 && S.missions.index !== 4 && enemies.list.length < 2 && enemies.backupTimer <= 0) {
     enemies.backupTimer = 14;
     const a = Math.random() * Math.PI * 2;
     spawnEnforcer(enemies, px + Math.cos(a) * 520, py + Math.sin(a) * 520);

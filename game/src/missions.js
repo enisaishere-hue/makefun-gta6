@@ -228,7 +228,8 @@ export function updateMissions(m, S, dt, events) {
   }
   if (m.index === 6) {
     // Cache Run: five stashes, 150 seconds. Walk or drive over a stash to
-    // grab it; the marker always points at the nearest one still out there.
+    // grab it; the marker always points at the NEAREST one still out there,
+    // so the run never sends the player past a stash to reach a farther one.
     for (const pkg of m.packages) {
       if (!pkg.taken && Math.hypot(px - pkg.x, py - pkg.y) < 46) {
         pkg.taken = true;
@@ -236,11 +237,16 @@ export function updateMissions(m, S, dt, events) {
         events.push({ type: 'cacheGrab', left: m.cacheLeft });
       }
     }
-    const next = m.packages.find((pkg) => !pkg.taken);
-    if (!next) {
+    const left = m.packages.filter((pkg) => !pkg.taken);
+    if (left.length === 0) {
       completeMission(m, events);
     } else {
-      const n = m.packages.filter((pkg) => !pkg.taken).length;
+      let next = left[0], nd = Infinity;
+      for (const pkg of left) {
+        const d = Math.hypot(px - pkg.x, py - pkg.y);
+        if (d < nd) { nd = d; next = pkg; }
+      }
+      const n = left.length;
       setObjective(m, 'Stashes left: ' + n + ' of 5 — grab them before the clock runs out.', { x: next.x, y: next.y, label: 'Stash ' + (5 - n + 1) + ' of 5' }, m.timer);
     }
   }

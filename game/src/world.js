@@ -42,6 +42,9 @@ export function buildCity(seed) {
   }
 
   // Harbor: water along the south edge with two piers and warehouses.
+  // The warehouses sit BETWEEN the avenues, never across one: a warehouse
+  // straddling an avenue dead-ends the road at the harbor and wedges any
+  // cruiser chasing north up it.
   const harbor = {
     water: { x: 0, y: 1780, w: WORLD_W, h: 140 },
     piers: [
@@ -49,8 +52,8 @@ export function buildCity(seed) {
       { x: 1500, y: 1700, w: 60, h: 120 },
     ],
     warehouses: [
-      { x: 700, y: 1600, w: 220, h: 90, color: '#5a4a3a' },
-      { x: 1100, y: 1600, w: 220, h: 90, color: '#4a5a6a' },
+      { x: 420, y: 1600, w: 220, h: 90, color: '#5a4a3a' },
+      { x: 1360, y: 1600, w: 120, h: 90, color: '#4a5a6a' },
       { x: 1980, y: 1600, w: 220, h: 90, color: '#6a4a5a' },
     ],
   };

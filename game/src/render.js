@@ -450,9 +450,16 @@ export function drawHUD(ctx, S) {
   drawMinimap(ctx, S);
 }
 
+// The minimap: a live map of Port Meridian in the bottom-right corner —
+// the player, the mission marker, the law, and everything the player is
+// hunting: unfound caches, the Cache Run's stashes, the Street King gates,
+// the Kings' enforcers, and the informant on his escort. Landmarks (the
+// garage and the hospital) sit on it too, so the player can navigate by it
+// without opening anything.
 export function drawMinimap(ctx, S) {
   const mw = 220, mh = 165, mx = 1280 - mw - 14, my = 720 - mh - 14;
   const sx = mw / WORLD_W, sy = mh / WORLD_H;
+  const X = (wx) => mx + wx * sx, Y = (wy) => my + wy * sy;
   ctx.fillStyle = '#000000aa';
   ctx.fillRect(mx - 4, my - 4, mw + 8, mh + 8);
   ctx.fillStyle = '#1d4a2a';
@@ -462,23 +469,66 @@ export function drawMinimap(ctx, S) {
   for (const sy2 of STREETS) ctx.fillRect(mx, my + sy2 * sy - 2, mw, 4);
   ctx.fillStyle = '#1d5f8a';
   ctx.fillRect(mx, my + 1780 * sy, mw, mh - 1780 * sy);
+  // Landmarks: Delia's garage (green G) and the hospital (white H).
+  ctx.font = 'bold 9px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#2ecc71';
+  ctx.fillRect(X(S.city.garage.x + 75) - 3, Y(S.city.garage.y + 50) - 3, 6, 6);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(X(S.city.hospital.x + 65) - 3, Y(S.city.hospital.y + 55) - 3, 6, 6);
+  // Unfound smuggler's caches: green dots, so the hunt is visible at a glance.
+  for (const k of S.collectibles.list) {
+    if (k.found) continue;
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath(); ctx.arc(X(k.x), Y(k.y), 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // Cache Run stashes still on the street: gold squares.
+  if (S.missions.index === 6) {
+    for (const pkg of S.missions.packages) {
+      if (pkg.taken) continue;
+      ctx.fillStyle = '#ffd76a';
+      ctx.fillRect(X(pkg.x) - 3, Y(pkg.y) - 3, 6, 6);
+    }
+  }
+  // Street King gates, in order: the live gate gold, the rest grey.
+  if (S.missions.index === 8) {
+    for (let i = 0; i < S.missions.gates.length; i++) {
+      const g = S.missions.gates[i];
+      ctx.fillStyle = i === S.missions.gateIndex ? '#ffd76a' : '#8a8f96';
+      ctx.beginPath(); ctx.arc(X(g.x), Y(g.y), i === S.missions.gateIndex ? 4 : 3, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // The Kings' enforcers on the street: red dots.
+  for (const e of S.enemies.list) {
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath(); ctx.arc(X(e.x), Y(e.y), 3, 0, Math.PI * 2); ctx.fill();
+  }
+  // The informant on his escort: a cyan dot that trails the player.
+  if (S.missions.index === 7 && S.missions.informant) {
+    ctx.fillStyle = '#2dd4ff';
+    ctx.beginPath(); ctx.arc(X(S.missions.informant.x), Y(S.missions.informant.y), 3.5, 0, Math.PI * 2); ctx.fill();
+  }
   const p = S.player;
   const px = p.inCar ? p.inCar.x : p.x, py = p.inCar ? p.inCar.y : p.y;
   if (S.missions.target) {
-    const tx = mx + S.missions.target.x * sx, ty = my + S.missions.target.y * sy;
+    const tx = X(S.missions.target.x), ty = Y(S.missions.target.y);
     ctx.fillStyle = '#ffd76a';
     ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(tx, ty, 5, 0, Math.PI * 2); ctx.stroke();
   }
   for (const car of S.police.cars) {
     ctx.fillStyle = '#2d7dff';
-    ctx.fillRect(mx + car.x * sx - 2, my + car.y * sy - 2, 4, 4);
+    ctx.fillRect(X(car.x) - 2, Y(car.y) - 2, 4, 4);
   }
   ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(mx + px * sx, my + py * sy, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(X(px), Y(py), 4, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(mx + px * sx, my + py * sy, 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(X(px), Y(py), 7, 0, Math.PI * 2); ctx.stroke();
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 11px system-ui, sans-serif';
+  ctx.textAlign = 'left';
   ctx.fillText('PORT MERIDIAN', mx + 4, my + 14);
 }
 
@@ -521,7 +571,7 @@ export function drawTitle(ctx, S) {
   ctx.fillText('Steal cars. Outrun the law. Survive the night.', 640, 364);
   ctx.fillStyle = '#2ecc71';
   ctx.font = '17px system-ui, sans-serif';
-  ctx.fillText('Gunfights with the Kings · Falcon bikes · police roadblocks · live synth music · day & night · 8 hidden caches', 640, 412);
+  ctx.fillText('Gunfights with the Kings · Falcon bikes · police roadblocks · live minimap · live synth music · day & night · 8 hidden caches', 640, 412);
   ctx.fillStyle = '#ffd76a';
   ctx.font = 'bold 24px system-ui, sans-serif';
   ctx.fillText(S.save.jobsDone > 0 || S.save.cash > 40 ? 'Press ENTER to continue — ' + S.save.jobsDone + '/10 jobs done' : 'Press ENTER to start', 640, 478);

@@ -49,7 +49,13 @@ export function driveCar(car, throttle, steer, handbrake, dt, city) {
   }
 
   speed = clamp(speed, -maxR, maxF);
-  const steerAmount = steer * base.steerRate * tune.steer * clamp(Math.abs(speed) / 140, 0, 1) * (speed >= 0 ? 1 : -1);
+  // A car steers with speed — but never to zero: a cruiser wedged on a
+  // building at a standstill could never turn its nose toward its target
+  // and drive out, so it sat there forever. The floor (30% authority) lets
+  // any slow or stopped car turn its wheels and wriggle free; at speed the
+  // normal authority takes over and nothing about the handling changes.
+  const steerAuthority = Math.max(0.3, clamp(Math.abs(speed) / 140, 0, 1));
+  const steerAmount = steer * base.steerRate * tune.steer * steerAuthority * (speed >= 0 ? 1 : -1);
   car.angle += steerAmount * dt * (handbrake ? 1.5 : 1);
   lateral *= Math.exp(-base.grip * dt * (handbrake ? 0.35 : 1));
   const drag = onRoad(car.x, car.y) ? base.drag : base.offroadDrag;
